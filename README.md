@@ -9,7 +9,7 @@ Currently randomized:
 - monsters, picked from CSV file
 - encounters
 - meat transformations
-- shop contents
+- equipment shop contents
 - chest contents
 - mutant attribute learn rates and amounts (one of four choices)
 - mutant learnable abilities
