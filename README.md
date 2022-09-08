@@ -28,6 +28,8 @@ Future:
 
 Infinite thanks: https://towerreversed.neocities.org/, the "fledermaus" utility in particular.
 
+Contact: eclipseyy@gmx.com. PLEASE email me with your feedback, suggestions, etc!
+
 Version history:
 
 v0.001 - initial
