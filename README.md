@@ -2,6 +2,7 @@
 Randomizer for Gameboy game The Final Fantasy Legend (1989).
 
 Windows binary here: https://github.com/eclipseyy/FFLRandomizer/releases/download/v0.001/randomize_ffl.zip
+
 Written in Python 3.8 on Windows. I haven't tested other platforms, but I don't think there's anything Windows-specific in there - pathlib is used for paths, etc - so it might work.
 
 Currently randomized:
