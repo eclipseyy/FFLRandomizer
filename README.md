@@ -18,7 +18,7 @@ You have to supply the path to the FFL rom and the path to the monster CSV. You 
 
 Silent mode: randomize_ffl rompath monstercsvpath seed
 
-I tried to balance game difficulty to be fairly similar to vanilla FFL. The biggest difference is in monster meat eating. There's a much higher chance of transforming into a higher level monster when eating meat, compared to vanilla FFL. To compensate for this, there's a much higher chance of "nothing happened" when eating meat. Meat transformation is randomized quite crudely; eating the meat of your own monster type might cause a transformation, and in some seeds, there might be some monsters who cannot transform at all.
+I tried to balance game difficulty to be fairly similar to vanilla FFL. The biggest difference is in monster meat eating. There's a much higher chance of transforming into a higher level monster when eating meat, compared to vanilla FFL. To compensate for this, the meat transformation table is randomized to give a much higher chance of "nothing happened" when eating meat. Meat transformation is randomized quite crudely; eating the meat of your own monster type might cause a transformation, and in some seeds, there might be some monsters who cannot transform at all.
 
 Future:
 - switches to control which features are randomized
@@ -30,7 +30,7 @@ Future:
 
 Infinite thanks: https://towerreversed.neocities.org/, the "fledermaus" utility in particular.
 
-Contact: eclipseyy@gmx.com. PLEASE email me with your feedback, suggestions, etc!
+Contact: eclipseyy@gmx.com. PLEASE email me with your feedback, suggestions, etc! I haven't spent a lot of time playtesting it, so all feedback is super valuable.
 
 Version history:
 
