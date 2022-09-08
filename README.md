@@ -16,6 +16,8 @@ Currently randomized:
 
 You have to supply the path to the FFL rom and the path to the monster CSV. You can edit the monster CSV first if you want. You can optionally supply the seed value to use for the randomization. The randomizer generates one new rom file per run.
 
+Silent mode: randomize_ffl rompath monstercsvpath seed
+
 I tried to balance game difficulty to be fairly similar to vanilla FFL. The biggest difference is in monster meat eating. There's a much higher chance of transforming into a higher level monster when eating meat, compared to vanilla FFL. To compensate for this, there's a much higher chance of "nothing happened" when eating meat. Meat transformation is randomized quite crudely; eating the meat of your own monster type might cause a transformation, and in some seeds, there might be some monsters who cannot transform at all.
 
 Future:
