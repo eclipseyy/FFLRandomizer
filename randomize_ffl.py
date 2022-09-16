@@ -4,19 +4,30 @@ import pathlib
 import csv
 import sys
 
-VERSION = "0.001"
+VERSION = "0.002"
 
-def RandomizeFFLRomBytes(filebytes, monstercsvpath):
+# contact: eclipseyy@gmx.com
 
-    # OBSOLETE_RandomizeItemAttributes(filebytes)
+def RandomizeFFLRomBytes(filebytes, monstercsvpath, seed):
+
+    encounter_meat_levels = ReadAllEncounterCharacterMeatLevels(filebytes)
+    character_abils = ReadAllCharacterAbilities(filebytes)
+    original_item_details = [ReadItemToDict(filebytes, idx) for idx in range(0x00, 0xff)]
+
     RandomizeMutantAbilityLearnList(filebytes)
+
+    RandomizeArmor(filebytes)
+    RandomizeMeleeWeapons(filebytes)
+    
+    RewriteHumanAndMutantItems(filebytes, character_abils)
+    RewriteNonMonsterEnemyItems(filebytes, character_abils, original_item_details)
 
     RandomizeEquipmentShops(filebytes)
     RandomizeChests(filebytes)
 
-    encounter_meat_levels = ReadAllEncounterCharacterMeatLevels(filebytes)
-
-    RandomizeMonsters(filebytes, monstercsvpath)
+    RandomizeMonsters(filebytes, character_abils, monstercsvpath)
+    
+    WriteAllCharacterAbilities(filebytes, character_abils)
 
     for encounter_id in range(0, 0x80):
         RandomizeEncounterMonstersByMeatLevel(filebytes, encounter_id, encounter_meat_levels[encounter_id])
@@ -25,38 +36,9 @@ def RandomizeFFLRomBytes(filebytes, monstercsvpath):
     RandomizeHPTable(filebytes)
     ReplaceMutantRace(filebytes)
     RandomizeMeatTransformationTable(filebytes)
-
-    return
-
-def OBSOLETE_RandomizeItemAttributes(filebytes):
-
-    # Randomize x and y attributes of selected items to between 50% and 150% of their original value
-
-    item_ids_randomize_x_and_y = [0x00, 0x01, 0x02, 0x03, 0x0e, 0x0f, \
-                                  0x10, 0x1b, \
-                                  0x35, 0x37, 0x38, 0x39, 0x3a, 0x3b, 0x3c, 0x3d, 0x3e, 0x3f, \
-                                  0x40, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, \
-                                  0x72, 0x73, 0x74, 0x75, 0x76, 0x77]
-
-    item_ids_randomize_x = [0x11, 0x12, \
-                            0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, \
-                            0x29, 0x2a, 0x2b, 0x2c, 0x2e, 0x2f, \
-                            0x30, 0x31, 0x32, 0x34, 0x36, \
-                            0x52, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58, \
-                            0x59, 0x5a, 0x5b, 0x5c, 0x5d, 0x5e, 0x5f, \
-                            0x60, 0x61, 0x62, 0x63, 0x64, 0x65, 0x66, 0x67, \
-                            0x69, 0x6a, 0x6b, 0x6c, 0x6d, 0x6e]
-
-    item_ids_randomize_y = [0x0c, 0x0d, 0x13, 0x4b, 0x4c, 0x4d, 0x4e, 0x4f, 0x50, 0x51]
-
-    for item_id in range(0, 256):
-        x_offset = 0x0001b704 + (8 * item_id)
-        y_offset = 0x0001b705 + (8 * item_id)
-
-        if (item_id in item_ids_randomize_x_and_y) or (item_id in item_ids_randomize_x):
-            RandomizeByteWithinMultipliers(filebytes, x_offset, 0.5, 1.5)
-        if (item_id in item_ids_randomize_x_and_y) or (item_id in item_ids_randomize_y):
-            RandomizeByteWithinMultipliers(filebytes, y_offset, 0.5, 1.5)
+    RandomizeMeatResultLists(filebytes)
+    
+    WriteSeedTextToTitleScreen(filebytes, seed)
 
     return
 
@@ -144,29 +126,22 @@ def RandomizeEquipmentShops(filebytes):
     # There are 11 equipment shops. Each has ten slots, one byte each.
     # The first starts at 0x00017d38 and shops are spaced 0x14 apart
     # (the intervening bytes being item shops)
+    
+    min_costs = [12, 12, 80, 100, 500, 500, 2060, 4000, 5000, 24, 8000]
+    max_costs = [500, 1100, 1000, 2500, 9880, 10712, 10712, 32000, 100000, 500, 100000]
+    shop_contains_battle_sword = [False, False, True, True, False, False, False, False, False, False, False]
 
     for i in range(0, 11):
 
-        min_cost = 999999
-        max_cost = 0
+        min_cost = min_costs[i]
+        max_cost = max_costs[i] * 1.2
 
         shop_start_idx = 0x00017d38 + (0x14 * i)
 
         # Need to be able to buy battle sword to advance the story.
         # For now, keep battle sword in any shops that contain it
-        contains_battle_sword = False
+        contains_battle_sword = shop_contains_battle_sword[i]
 
-        for j in range(0, 10):
-            item = filebytes[shop_start_idx + j]
-            if item < 0x80:
-                item_cost = ReadItemCost(filebytes, item)
-                min_cost = min(min_cost, item_cost)
-                max_cost = max(max_cost, item_cost)
-                if item == 0x23:
-                    contains_battle_sword = True
-
-        max_cost = int(max_cost * 1.2)
-        
         new_shop_items = []
 
         if contains_battle_sword:
@@ -196,7 +171,7 @@ def RandomizeEquipmentShops(filebytes):
 
     return
 
-def RandomizeMonsters(filebytes, monstercsvpath):
+def RandomizeMonsters(filebytes, abils, monstercsvpath):
     meatLevels = [\
         [0, 2, 4, 5, 12, 14], \
         [1, 2, 5, 8, 12, 14], \
@@ -253,24 +228,21 @@ def RandomizeMonsters(filebytes, monstercsvpath):
                     raise Exception("Error: failed to find monster in CSV file with MeatLevel " + meatLevel_str + " and LPic " + lpic_str)
                 game_monsters.append(random.choice(matching_monsters))
 
-        success = WriteMonstersToGame(filebytes, game_monsters)
+        success = WriteMonstersToGame(filebytes, abils, game_monsters)
 
     return
 
-def WriteMonstersToGame(filebytes, game_monsters):
+def WriteMonstersToGame(filebytes, abils, game_monsters):
 
     success = True
 
     # Check the total number of abilities is <= 991 (the maximum)
-    abils = ReadAllCharacterAbilities(filebytes)
     ParseMonsterAbilitiesIntoCharacterAbilities(abils, game_monsters)
     total_num_abils = sum([len(i) for i in abils])
     if total_num_abils > 991:
         success = False
 
     if success:
-        WriteAllCharacterAbilities(filebytes, abils)
-
         # Write the race / meat drop / num abilities bytes.
         # All monsters are "Monster" race, meat drop 3.
         # If we start to randomize race and meat drop, this will need to change
@@ -421,7 +393,7 @@ def WriteGPCost(filebytes, startidx, cost):
     remainder -= (digit * 10000)
     digit = int((remainder % 1000000) / 100000)
     byte += (0x10 * digit)
-    filebytes[startidx + 1] = byte
+    filebytes[startidx] = byte
 
     return int(cost)
 
@@ -496,10 +468,10 @@ def WriteItemGroupFlag(filebytes, item_id, val):
     return
 
 def ReadItemSFX(filebytes, item_id):
-    return (filebytes[0x0001b707 + (item_id * 8)] & 0x2e)
+    return (filebytes[0x0001b707 + (item_id * 8)] & 0x7f)
 
 def WriteItemSFX(filebytes, item_id, val):
-    filebytes[0x0001b707 + (item_id * 8)] |= (val & 0x2e)
+    filebytes[0x0001b707 + (item_id * 8)] |= (val & 0x7f)
     return
 
 def ReadItemFieldEffectA(filebytes, item_id):
@@ -540,27 +512,42 @@ def ReadAllEncounterCharacterMeatLevels(filebytes):
         allencountermeatlevels.append(encountermeatlevels)
     return allencountermeatlevels
 
+def GetMeatLevelsDict(filebytes):
+    # Initialize with pseudo meat levels for non-monster enemies
+    meat_levels = { 0x96:0, 0x97:2, 0x98:7, 0x99:9, 0x9a:12, 0x9b:0, 0x9c:5, 0x9d:9, 0x9e:11, 0x9f:13, \
+        0xa0:1, 0xa1:3, 0xa2:4, 0xa3:8, 0xa4:11, 0xa5:13, 0xa6:0, 0xa7:3, 0xa8:7, 0xa9:9, 0xaa:11, 0xab:13, 0xac:14 }
+        
+    # Read the actual meat levels for monster enemies
+    for i in range(0x00, 0x96):
+        meat_levels[i] = ReadMeatLevel(filebytes, i)
+
+    return meat_levels
+    
 # Picks random monsters for the specified encounter which match the target meat levels
 # Only replaces monsters (0x00-0x95). Does not replace non-monster enemies or bosses (> 0x96)
 def RandomizeEncounterMonstersByMeatLevel(filebytes, encounter_idx, target_meat_levels):
 
+    meat_levels = GetMeatLevelsDict(filebytes)
+        
+    # List of characters that will never be replaced: which are the bosses
+    non_replace_characters = [0xa0, 0xa6, 0xac, 0xbd, 0xbe, 0xbf, 0xc0, 0xc1, 0xc2, 0xc3, 0xc4, 0xc5, 0xc6, 0xc7]
+
     new_encounter_characters = []
     for charpos in range(0, 3):
-        new_encounter_characters.append(ReadEncounterCharacter(filebytes, encounter_idx, charpos))
-
-    for charpos in range(0, 3):
-        if(ReadEncounterCharacter(filebytes, encounter_idx, charpos) < 0x96):
+        encounter_character = ReadEncounterCharacter(filebytes, encounter_idx, charpos)
+        new_encounter_characters.append(encounter_character)
+        if not encounter_character in non_replace_characters:
             target_meat_level = target_meat_levels[charpos]
             success = False
             while((not success) and (target_meat_level >= 0)):
                 success = True
                 # Starting from a random offset and wrapping around, take the first monster with a matching meat level
                 # which doesn't already appear in the encounter
-                random_offset = random.randrange(0, 0x95)
-                for i in range(0, 0x96):
-                    idx = (i + random_offset) % 0x96
-                    if not idx in new_encounter_characters:
-                        if(ReadMeatLevel(filebytes, idx) == target_meat_level):
+                random_offset = random.randrange(0, 0xac)
+                for i in range(0, 0xad):
+                    idx = (i + random_offset) % 0xad
+                    if (not idx in new_encounter_characters) and (not idx in non_replace_characters):
+                        if(meat_levels[idx] == target_meat_level):
                             new_encounter_characters[charpos] = idx
                             success = True
                             break
@@ -775,6 +762,13 @@ def ReadItemName(filebytes, idx):
     for i in range(0, 7):
         name += chr(FFLNameTextToASCII(filebytes[0x00014640 + (idx * 8) + i]))
     return name
+    
+def WriteItemName(filebytes, idx, name):
+    for i in range(0, min(7, len(name))):
+        filebytes[0x00014640 + (idx * 8) + i] = ASCIIValueToFFLNameText(ord(name[i]))
+    for i in range(len(name), 7):
+        filebytes[0x00014640 + (idx * 8) + i] = ASCIIValueToFFLNameText(ord(' '))
+    return
 
 def ReadGuildCharacter(filebytes, guildidx, charidx):
     return filebytes[0x00017f90 + (guildidx * 8) + charidx]
@@ -926,21 +920,63 @@ def ReplaceMutantRace(filebytes):
     return
 
 def RandomizeMeatTransformationTable(filebytes):
-    # Randomize the meat table without many constraints.
-    # The result will have more "nothing happened"s than FFL;
-    # eating the meat of the same class as the eater may result in transformation;
-    # some monsters might be unable to transform at all;
-    # and many monsters may be impossible to get.
-    # Hopefully the result is that monsters are much harder to exploit.
-    for addr in range(0x0000afd3, 0x0000b2a8):
-        pick = random.randrange(0, 0x80)
-        if pick > 0x18: # 0x18 is the last valid value
-            pick = 0xff # 0xff is "nothing happened"
-        filebytes[addr] = pick
+    for row in range(0, 25):
+        outcomes = list(range(0, 0x19))
+        outcomes = outcomes + [0xff, 0xff, 0xff, 0xff]
+        random.shuffle(outcomes)
+        for col in range(0, 29):
+            filebytes[0x0000afd3 + (row * 29) + col] = outcomes[col]
+    return
+    
+def RandomizeMeatResultLists(filebytes):
+    meat_levels = GetMeatLevelsDict(filebytes)
+    
+    for monster_class in range(0, 25):
+        for level in range(0, 16):
+            monster_id = -1
+            
+            # Check for a monster in this class with the correct meat level
+            for class_member in range(0, 6):
+                class_member_id = (monster_class * 6) + class_member
+                if meat_levels[class_member_id] == level:
+                    monster_id = class_member_id
+                    
+            if monster_id < 0:
+                # Check for a monster in this class with meat level one lower
+                for class_member in range(0, 6):
+                    class_member_id = (monster_class * 6) + class_member
+                    if meat_levels[class_member_id] == (level - 1):
+                        monster_id = class_member_id
+                        
+            if monster_id < 0:
+                if random.randrange(0, 2) == 0: # 50% chance
+                    # Check for a monster in this class with meat level one higher
+                    for class_member in range(0, 6):
+                        class_member_id = (monster_class * 6) + class_member
+                        if meat_levels[class_member_id] == (level + 1):
+                            monster_id = class_member_id
+                            
+            if monster_id < 0:
+                # Choose a random monster from any class with the correct meat level
+                id_range = 0xad # Allow transforming into non-monster enemies! Set to 0x96 to disallow this
+                id_offset = random.randrange(0, id_range)
+                for i in range(0, id_range):
+                    check_monster_id = (i + id_offset) % id_range
+                    if meat_levels[check_monster_id] == level:
+                        monster_id = check_monster_id
+                        break
+                        
+            if monster_id < 0:
+                raise Exception("RandomizeMeatResultLists algorithm error")
+            
+            filebytes[0x0000b2a8 + (monster_class * 16) + level] = monster_id
+
+    return
 
 def RandomizeChests(filebytes):
     # Pick a random item for each chest (except chests with story items)
-    # which is between 75% and 125% of the value of the original item
+    # which is between 75% and 125% of the value of the original item,
+    # or (20% chance) between 200% and 300% of the value
     addrs = [0xa404, 0xa429, 0xa44e, 0xa47c, 0xa4bf, 0xa4c8, 0xa4d1, 0xa4da, 0xa4e3, 0xa4ec, 0xa4f3, \
              0xa4fa, 0xa501, 0xa513, 0xa53b, 0xa544, 0xa5d7, 0xa5de, 0xa5e5, 0xa8c0, 0xa8c7, 0xa8ce, \
              0xa9f4, 0xa9fb, 0xaa02, 0xab0f, 0xab16, 0xab1d, 0xab24, 0xab2b, 0xab32, 0xae1d, 0xae26, \
@@ -949,16 +985,29 @@ def RandomizeChests(filebytes):
                    8000, 50000, 50000, 10000, 10000, 50, 50, 300, 40, 1000, 2500, 800, 200, 10000, \
                    15000, 5000, 5000, 10480, 5000, 200, 23200, 15000, 100000, 200, 10000, 8000, 5000]
     for i in range(0, len(addrs)):
-        valid = False
         pick = 0xff
-        while not valid:
-            pick = random.randrange(0x80)
+        r = random.randrange(0x80)
+        valid = False
+        min_cost = item_values[i] * 0.75
+        max_cost = item_values[i] * 1.25
+        if random.randrange(0, 10) < 2:
+            min_cost = item_values[i] * 2.0
+            max_cost = item_values[i] * 3.0
+        for item_offset in range(0, 0x80):
+            pick = (r + item_offset) % 0x80
             # exclude story items
             valid = not pick in [0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1c, 0x1d, 0x1e, 0x1f, 0x7e, 0x7f]
             if valid:
                 pick_cost = ReadItemCost(filebytes, pick)
-                valid = ((pick_cost >= (item_values[i] * 0.75)) and (pick_cost <= (item_values[i] * 1.25)))
+                valid = ((pick_cost >= min_cost) and (pick_cost <= max_cost))
+            if valid:
+                break
+        # If no items were found in the target price range, pick a random item (except story items)
+        while (not valid):
+            pick = random.randrange(0, 0x80)
+            valid = not pick in [0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1c, 0x1d, 0x1e, 0x1f, 0x7e, 0x7f]
         addr = addrs[i]
+        # print("Replacing", ReadItemName(filebytes, filebytes[addr]), "with", ReadItemName(filebytes, pick))
         filebytes[addr] = pick
     return
 
@@ -1046,15 +1095,19 @@ def ExportMeatMonstersCSV(filebytes, rompath):
 
     return
 
-def ExportItemsCSV(filebytes):
+def ExportItemsCSV(filebytes, rompath):
 
-    p = pathlib.Path(INFILE).with_name("FFLItems.csv")
+    p = pathlib.Path(rompath).with_name("FFLItems.csv")
 
     f = open(p, mode='w')
 
-    f.write("Name,Uses,Cost,FlagsA,FlagsB,Type,AltUses,X,Y,GFX,Group,SFX,UsedByChrs\n")
+    f.write("ID,Name,Uses,Cost,FlagsA,FlagsB,Type,AltUses,X,Y,GFX,Group,SFX,UsedByChrs,Weight,\n")
 
     for idx in range(0, 0x80):
+
+        # ID
+        f.write(str(idx))
+        f.write(',')
 
         # Name
         name = ReadItemName(filebytes, idx)
@@ -1117,20 +1170,635 @@ def ExportItemsCSV(filebytes):
         f.write(str(sfx))
         f.write(',')
 
-        # UsedByChrs. Flag is true if the item is used by enemies
-        used_by_chrs = False
-        for chridx in range(0, 0xc8):
-            if (chridx >= 0xad) and (chridx < 0xbd): # exclude guild HUMANs and MUTANTs
-                continue
-            abils = ReadCharacterAbilList(filebytes, chridx)
-            if idx in abils:
-                used_by_chrs = True
-                break
+        # UsedByChrs. Flag is true if the item is used by enemies. Also true for battle sword and king items.
+        used_by_chrs = IsAbilUsedByEnemies(filebytes, idx) or (idx in [0x23, 0x11, 0x12, 0x13])
         f.write(str(used_by_chrs))
         f.write(',')
+        
+        # Weight
+        f.write("1")
+        f.write(",")
 
         f.write('\n')
+        
+def IsAbilUsedByEnemies(filebytes, idx):
+    for chridx in range(0, 0xc8):
+        if (chridx >= 0xad) and (chridx < 0xbd): # exclude guild HUMANs and MUTANTs
+            continue
+        if (chridx >= 0x96) and (chridx < 0xac): # exclude non-monster enemies (but not MACHINE)
+            continue
+        abils = ReadCharacterAbilList(filebytes, chridx)
+        if idx in abils:
+            return True
+    return False
+        
+def WriteSeedTextToTitleScreen(filebytes, seed):
+    seedstr = str(seed)
+    while len(seedstr) < 20:
+        seedstr += " "
+    for i in range(0, 20):
+        filebytes[0x0000ecee + i] = ASCIIValueToFFLNameText(ord(seedstr[i]))
+        
+    return
+    
+def GetCSVItemAllowedByArmorSimilarityCriterion(csv_item, helm_x_values, armor_x_values, glove_x_values, shoe_x_values, min_value_difference):
+    csv_type = int(csv_item['Type'])
+    csv_FlagsA = int(csv_item['FlagsA'])
+    csv_x = int(csv_item['X'])
+    is_helm = (csv_type == 0) and ((csv_FlagsA & 0x04) == 0x04)
+    is_armor = (csv_type == 0) and ((csv_FlagsA & 0x08) == 0x08)
+    is_glove = (csv_type == 0) and ((csv_FlagsA & 0x10) == 0x10)
+    is_shoe = (csv_type == 0) and ((csv_FlagsA & 0x20) == 0x20)
+    if is_helm:
+        if GetValueTooSimilar(helm_x_values, csv_x, min_value_difference):
+            # print("helm too similar", csv_item['Name'], csv_x, helm_x_values)
+            return False
+    if is_armor:
+        if GetValueTooSimilar(armor_x_values, csv_x, min_value_difference):
+            # print("armor too similar", csv_item['Name'], csv_x, armor_x_values)
+            return False
+    if is_glove:
+        if GetValueTooSimilar(glove_x_values, csv_x, min_value_difference):
+            # print("glove too similar", csv_item['Name'], csv_x, glove_x_values)
+            return False
+    if is_shoe:
+        if GetValueTooSimilar(shoe_x_values, csv_x, min_value_difference):
+            # print("shoe too similar", csv_item['Name'], csv_x, shoe_x_values)
+            return False
+    return True
+    
+def GetCSVItemAllowedByMeleeSimilarityCriterion(csv_item, a_x_values, m_x_values, s_x_values, min_value_difference):
+    csv_type = int(csv_item['Type'])
+    csv_x = int(csv_item['X'])
+    vals = []
+    if (csv_type == 0x0b):
+        vals = a_x_values
+    if (csv_type == 0x0c):
+        vals = m_x_values
+    if (csv_type == 0x06):
+        vals = s_x_values
+    if csv_x < 3:
+        # allow one weapon at each of level 1 and 2
+        return not csv_x in vals
+    return not GetValueTooSimilar(vals, csv_x, min_value_difference)
 
+def AddArmorCSVItemXValueToExisting(csv_item, helm_x_values, armor_x_values, glove_x_values, shoe_x_values):
+    csv_type = int(csv_item['Type'])
+    csv_FlagsA = int(csv_item['FlagsA'])
+    csv_x = int(csv_item['X'])
+    is_helm = (csv_type == 0) and ((csv_FlagsA & 0x04) == 0x04)
+    is_armor = (csv_type == 0) and ((csv_FlagsA & 0x08) == 0x08)
+    is_glove = (csv_type == 0) and ((csv_FlagsA & 0x10) == 0x10)
+    is_shoe = (csv_type == 0) and ((csv_FlagsA & 0x20) == 0x20)
+    if is_helm:
+        # print("adding helm value", csv_x, "to", helm_x_values)
+        helm_x_values.append(csv_x)
+    if is_armor:
+        # print("adding armor value", csv_x, "to", armor_x_values)
+        armor_x_values.append(csv_x)
+    if is_glove:
+        # print("adding glove value", csv_x, "to", glove_x_values)
+        glove_x_values.append(csv_x)
+    if is_shoe:
+        # print("adding shoe value", csv_x, "to", shoe_x_values)
+        shoe_x_values.append(csv_x)
+
+    return
+    
+def GetValueTooSimilar(existing_values, new_value, min_difference):
+    for v in existing_values:
+        if abs(v - new_value) < min_difference:
+            return True
+    return False
+    
+def GetAnyFlagSet(val, acceptable_values):
+    for flag in acceptable_values:
+        if (val & flag) == flag:
+            return True
+    return False
+    
+def WriteCSVItemToSlot(filebytes, idx, chosen_item):
+    # print("Replacing", ReadItemName(filebytes, idx), "with", chosen_item['Name'])
+    # print(chosen_item)
+
+    # Write its properties to the item slot
+    WriteItemName(filebytes, idx, chosen_item['Name'])
+    WriteItemUses(filebytes, idx, int(chosen_item['Uses']))
+    WriteItemCost(filebytes, idx, int(chosen_item['Cost']))
+    WriteItemFlagsA(filebytes, idx, int(chosen_item['FlagsA']))
+    WriteItemFlagsB(filebytes, idx, int(chosen_item['FlagsB']))
+    WriteItemType(filebytes, idx, int(chosen_item['Type']))
+    WriteItemAltUses(filebytes, idx, int(chosen_item['AltUses']))
+    WriteItemX(filebytes, idx, int(chosen_item['X']))
+    WriteItemY(filebytes, idx, int(chosen_item['Y']))
+    WriteItemGFX(filebytes, idx, int(chosen_item['GFX']))
+    # Initialize the group flag/SFX byte
+    filebytes[0x0001b707 + (idx * 8)] = 0
+    WriteItemGroupFlag(filebytes, idx, int(chosen_item['Group']))
+    WriteItemSFX(filebytes, idx, int(chosen_item['SFX']))
+    
+    return
+    
+def RewriteHumanAndMutantItems(filebytes, abils):
+    costs = [50, 150, 1000, 15000]
+    s_weapons = []
+    a_weapons = []
+    for cost_idx in range(0, 4):
+        max_cost = costs[cost_idx]
+        min_cost = 0
+        if cost_idx > 0:
+            min_cost = costs[cost_idx - 1]
+        wpn = TryFindItemWithTypeInCostRange(filebytes, 6, min_cost, max_cost) # Strike (S)
+        if wpn < 0:
+            wpn = TryFindItemWithTypeInCostRange(filebytes, 17, min_cost, max_cost) # Projectile (S)
+        s_weapons.append(wpn)
+        wpn = TryFindItemWithTypeInCostRange(filebytes, 11, min_cost, max_cost) # Strike (A)
+        if wpn < 0:
+            wpn = TryFindItemWithTypeInCostRange(filebytes, 18, min_cost, max_cost) # Projectile (A)
+        a_weapons.append(wpn)
+
+    for wpns in [s_weapons, a_weapons]:
+        for wpn_idx in range(0, len(wpns)):
+            if wpns[wpn_idx] < 0:
+                if (wpn_idx > 0) and (wpns[wpn_idx - 1] >= 0):
+                    wpns[wpn_idx] = wpns[wpn_idx - 1]
+                else:
+                    if (wpn_idx < (len(wpns) - 1)) and (wpns[wpn_idx + 1] >= 0):
+                        wpns[wpn_idx] = wpns[wpn_idx + 1]
+        for wpn_idx in range(0, len(wpns)):
+            if wpns[wpn_idx] < 0:
+                wpns[wpn_idx] = 0x00
+                    
+
+    abils[0xad][0] = s_weapons[0] # HUMAN M
+    abils[0xae][0] = a_weapons[0] # HUMAN F
+    abils[0xaf][4] = s_weapons[0] # MUTANT M
+    abils[0xb0][4] = a_weapons[0] # MUTANT M
+    abils[0xb1][0] = s_weapons[1] # HUMAN M
+    abils[0xb1][1] = 0x00 # HUMAN M
+    abils[0xb2][0] = a_weapons[1] # HUMAN F
+    abils[0xb2][1] = 0x00 # HUMAN F
+    abils[0xb3][4] = s_weapons[1] # MUTANT M
+    abils[0xb4][4] = a_weapons[1] # MUTANT M
+    abils[0xb5][0] = s_weapons[2] # HUMAN M
+    abils[0xb6][0] = a_weapons[2] # HUMAN F
+    # 0xb7 - MUTANT M with only powers
+    # 0xb8 - MUTANT F with only powers
+    abils[0xb9][0] = s_weapons[3] # HUMAN M
+    abils[0xba][0] = a_weapons[3] # HUMAN F
+    # 0xbb - MUTANT M with only powers
+    # 0xbc - MUTANT F with only powers
+
+    return
+    
+def TryFindItemWithTypeInCostRange(filebytes, abiltype, mincost, maxcost):
+    for idx in range(0x00, 0x80):
+        item_cost = ReadItemCost(filebytes, idx)
+        if (item_cost >= mincost) and (item_cost <= maxcost):
+            if (ReadItemType(filebytes, idx) == abiltype):
+                return idx
+    return -1
+    
+def RandomizeArmor(filebytes):
+    armor_flags = [0x04, 0x08, 0x10, 0x20]
+    new_items = []
+    GenerateHelms(new_items)
+    GenerateArmors(new_items)
+    GenerateGloves(new_items)
+    GenerateShoes(new_items)
+    old_items = []
+    for idx in range(0x00, 0x80):
+        if idx in [0x11, 0x12, 0x13]: # KING items
+            continue
+        tp = ReadItemType(filebytes, idx)
+        if tp != 0:
+            continue
+        flagsA = ReadItemFlagsA(filebytes, idx)
+        if not GetAnyFlagSet(flagsA, armor_flags):
+            continue
+        if IsAbilUsedByEnemies(filebytes, idx):
+            continue
+        old_items.append(ReadItemToDict(filebytes, idx))
+        
+    cost_ranges = [[0, 50], [51, 100], [101, 200], [201, 350], [351, 500], [501, 1000], [1001, 5000], [5001, 10000], [10001, 20000], [20001, 9999999]]
+    AdjustWeightsByCostRange(cost_ranges, old_items, new_items)
+    
+    helm_x_values = []
+    armor_x_values = []
+    glove_x_values = []
+    shoe_x_values = []
+
+    rom_eligible_items = [d['ID'] for d in old_items]
+    random.shuffle(rom_eligible_items)
+
+    replacement_items = list(new_items)
+    random.shuffle(replacement_items)
+    
+    use_cost_criterion = True
+
+    for idx in rom_eligible_items:
+        target_cost = ReadItemCost(filebytes, idx)
+        replacement_eligible_items = [itm for itm in replacement_items \
+            if GetCSVItemAllowedByArmorSimilarityCriterion(itm, helm_x_values, armor_x_values, glove_x_values, shoe_x_values, 3)\
+            and ((not use_cost_criterion) or ((itm['Cost'] > target_cost * 0.5) and (itm['Cost'] < target_cost * 1.5)))]
+        if use_cost_criterion and (len(replacement_eligible_items) == 0):
+            # try again without cost criterion
+            replacement_eligible_items = [itm for itm in replacement_items \
+                if GetCSVItemAllowedByArmorSimilarityCriterion(itm, helm_x_values, armor_x_values, glove_x_values, shoe_x_values, 3)]
+        chosen_item = PickRandomItemFromCSVItems(replacement_eligible_items)
+        if chosen_item is None:
+            chosen_item = GetItemWithClosestCost(replacement_items, ReadItemCost(filebytes, idx))
+        if chosen_item is not None:
+            WriteCSVItemToSlot(filebytes, idx, chosen_item)
+            AddArmorCSVItemXValueToExisting(chosen_item, helm_x_values, armor_x_values, glove_x_values, shoe_x_values)
+            replacement_item_idx = replacement_items.index(chosen_item)
+            del(replacement_items[replacement_item_idx])
+        else:
+            raise Exception("Failed to replace item!")
+    return
+
+def PickRandomItemFromCSVItems(csv_eligible_items):
+    chosen_item = None
+    if len(csv_eligible_items) > 0:
+        # print(len(csv_eligible_items))
+        random.shuffle(csv_eligible_items)
+        total_weight = sum([float(itm['Weight']) for itm in csv_eligible_items])
+        pick = random.uniform(0, total_weight)
+        chosen_item = None
+            
+        for item in csv_eligible_items:
+            item_weight = float(item['Weight'])
+            if pick > item_weight:
+                # print(item['Name'], "item weight", item_weight, "remaining pick", pick, "- NOT choosing item")
+                pick -= item_weight
+            else:
+                # print(item['Name'], "item weight", item_weight, "remaining pick", pick, "- choosing item")
+                chosen_item = item
+                break
+                    
+        if chosen_item is None:
+            raise Exception("Trying to replace " + ReadItemName(filebytes, idx) + ": failed to pick from eligible items!")
+    return chosen_item
+
+def GetItemWithClosestCost(csv_items, target_g_value):
+    closest_cost_difference = 9999999
+    closest_value_csv_item_idx = -1
+    csv_item_idx_offset = random.randrange(0, len(csv_items))
+    for i in range(0, len(csv_items)):
+        csv_item_idx = (i + csv_item_idx_offset) % (len(csv_items))
+        csv_item = csv_items[csv_item_idx]
+        g_cost_str = csv_item['Cost']
+        g_cost = int(g_cost_str)
+
+        cost_difference = abs(target_g_value - g_cost)
+        if cost_difference < closest_cost_difference:
+            closest_cost_difference = cost_difference
+            closest_value_csv_item_idx = csv_item_idx
+                        
+    if closest_value_csv_item_idx > -1:
+        # Found suitable item
+        return csv_items[closest_value_csv_item_idx]
+    return None
+
+    
+def AdjustWeightsByCostRange(cost_ranges, old_items, new_items):
+    # Within each cost range, adjust weights of old and new items to result in the same total weight for the cost range,
+    # while preserving the relative weights of items
+    for cost_range in cost_ranges:
+        total_weight = sum([d['Weight'] for d in old_items if d['Cost'] >= cost_range[0] and d['Cost'] <= cost_range[1]])
+        if total_weight == 0:
+            raise Exception("No old items in cost range " + str(cost_range[0]) + "-" + str(cost_range[1]))
+        weight_sum_all_items = total_weight + sum([d['Weight'] for d in new_items if d['Cost'] >= cost_range[0] and d['Cost'] <= cost_range[1]])
+        # print("cost range", cost_range, "total weight old items", total_weight, "total weight all items", weight_sum_all_items)
+        if (weight_sum_all_items) == 0:
+            raise Exception("No items in cost range " + str(cost_range[0]) + "-" + str(cost_range[1]))
+        itm_lists = [old_items, new_items]
+        for itm_list in itm_lists:
+            for itm in itm_list:
+                if itm['Cost'] >= cost_range[0] and itm['Cost'] <= cost_range[1]:
+                    this_item_weight_proportion = float(itm['Weight']) / (weight_sum_all_items)
+                    itm['Weight'] = this_item_weight_proportion * total_weight
+                    # print(itm['Name'], itm['Weight'])
+    return
+
+    
+def ReadItemToDict(filebytes, idx):
+    used_by_chrs_str = "FALSE"
+    if(IsAbilUsedByEnemies(filebytes, idx)):
+        used_by_chrs_str = "TRUE"
+    
+    old_item = { 'ID':idx, 'Name':ReadItemName(filebytes, idx), 'Uses':ReadItemUses(filebytes, idx), 'Cost':ReadItemCost(filebytes, idx), \
+        'FlagsA': ReadItemFlagsA(filebytes, idx), 'FlagsB':ReadItemFlagsB(filebytes, idx), 'Type':ReadItemType(filebytes, idx), \
+        'AltUses':ReadItemAltUses(filebytes, idx), 'X':ReadItemX(filebytes, idx), 'Y':ReadItemY(filebytes, idx), \
+        'GFX':ReadItemGFX(filebytes, idx), 'Group':ReadItemGroupFlag(filebytes, idx), 'SFX':ReadItemSFX(filebytes, idx), \
+        'UsedByChrs':used_by_chrs_str, 'Weight':1, 'New':"FALSE" }
+        
+    return old_item
+    
+    
+def GenerateHelms(new_items):
+    prices = [40, 175, 600, 6000, 20000, 100, 280, 420, 820, 1100, 1440, 1860, 2375, 3000, 3800, 4800, 7500, 9500, 12000, 15500]
+    xs = [3, 5, 8, 17, 22, 4, 6, 7, 9, 10, 11, 12, 13, 14, 15, 16, 18, 19, 20, 21]
+    GenerateDefenseEquipment(prices, xs, 4, "@", new_items)
+    return
+
+def GenerateArmors(new_items):
+    prices = [80, 300, 2500, 8500, 109, 177, 275, 598, 846, 1170, 1586, 2771, 3583, 4576, 5779, 7222]
+    xs = [4, 8, 13, 19, 5, 6, 7, 9, 10, 11, 12, 14, 15, 16, 17, 18]
+    GenerateDefenseEquipment(prices, xs, 8, "&", new_items)
+    return
+    
+def GenerateGloves(new_items):
+    prices = [12, 150, 500, 5000, 10000, 43, 3000, 5680, 6354, 6973, 7549, 8091, 8603, 9092, 9559]
+    xs = [1, 3, 4, 6, 15, 2, 5, 7, 8, 9, 10, 11, 12, 13, 14]
+    GenerateDefenseEquipment(prices, xs, 16, "*", new_items)
+    return
+    
+def GenerateShoes(new_items):
+    prices = [24, 2060, 10480, 23200, 127, 407, 1000, 3830, 6500, 15887, 32902, 45314, 60964]
+    xs = [2, 6, 9, 11, 3, 4, 5, 7, 8, 10, 12, 13, 14]
+    GenerateDefenseEquipment(prices, xs, 32, "~", new_items)
+    return
+
+def GenerateDefenseEquipment(prices, xs, base_flag, name_prefix, new_items):
+    for i in range(0, len(prices)):
+        flags_vals = [base_flag, base_flag + 64, base_flag + 128]
+        flags_names = ["", ">", "<"]
+        element_vals = [0, 15, 64, 56, 255]
+        elements_names = ["", "DMG", "WPN", "CHG", "ALL"]
+        resist_g_multipliers = [1, 1.5, 2.2, 1.4, 3.0]
+        weak_g_multipliers = [1, 0.97, 0.95, 0.97, 0.93]
+
+        for flag_idx in range(0, len(flags_vals)):
+            num_elements = len(element_vals)
+            start_element = 0
+            if flag_idx == 0:
+                num_elements = 1
+            else:
+                start_element = 1
+            for element_idx in range(start_element, num_elements):
+                cost = prices[i]
+                if (flag_idx == 1) and ((element_idx == 2) or (element_idx == 4)):
+                    cost += 5000 # extra cost for O WEAPON
+                if flag_idx == 1:
+                    cost = int(cost * resist_g_multipliers[element_idx])
+                if flag_idx == 2:
+                    cost = int(cost * weak_g_multipliers[element_idx])
+                weight = 0.2
+                if flag_idx > 0:
+                    weight = 0.1
+                new_item = { 'ID':-999, 'Uses':254, 'FlagsB':0, 'Type':0, 'AltUses':254, 'GFX':0, 'Group':0, 'SFX':0, 'UsedByChrs':"FALSE", 'Weight':weight, 'New':"TRUE" }
+                new_item['Name'] = name_prefix + str(xs[i]) + flags_names[flag_idx] + elements_names[element_idx]
+                new_item['Cost'] = cost
+                new_item['FlagsA'] = flags_vals[flag_idx]
+                new_item['X'] = xs[i]
+                new_item['Y'] = element_vals[element_idx]
+                
+                new_items.append(new_item)
+
+        raise_vals = [1, 2, 3, 4]
+        raise_names = ["S", "A", "M", "SA"]
+        raise_g_add = [1000, 1000, 2000, 2000]
+        for raise_idx in range(0, len(raise_vals)):
+            cost = prices[i]
+            cost += raise_g_add[raise_idx]
+            
+            new_item = { 'ID':-999, 'Uses':254, 'FlagsB':0, 'Type':0, 'AltUses':254, 'GFX':0, 'Group':0, 'SFX':0, 'UsedByChrs':"FALSE", 'Weight':0.1, 'New':"TRUE" }
+
+            new_item['Name'] = name_prefix + str(xs[i]) + raise_names[raise_idx]
+            new_item['Cost'] = cost
+            new_item['FlagsA'] = base_flag
+            new_item['X'] = xs[i]
+            new_item['Y'] = raise_vals[raise_idx]
+            
+            new_items.append(new_item)
+            
+    return
+    
+def RandomizeMeleeWeapons(filebytes):
+    new_items = []
+    GenerateStrikeAWeapons(new_items)
+    GenerateStrikeMWeapons(new_items)
+    GenerateStrikeSWeapons(new_items)
+    GenerateCritWeapons(new_items)
+    old_items = []
+    melee_types = [0x06, 0x08, 0x07, 0x0B, 0x0C]
+    for idx in range(0x00, 0x80):
+        if idx in [0x11, 0x12, 0x13, 0x23]: # KING items, BATTLE sword
+            continue
+        tp = ReadItemType(filebytes, idx)
+        if not tp in melee_types:
+            continue
+        if IsAbilUsedByEnemies(filebytes, idx):
+            continue
+        old_items.append(ReadItemToDict(filebytes, idx))
+        
+    cost_ranges = [[0, 70], [71, 200], [201, 500], [501, 2500], [2501, 5000], [5001, 10000], [10001, 20000], [20001, 9999999]]
+    AdjustWeightsByCostRange(cost_ranges, old_items, new_items)
+    
+    a_x_values = []
+    m_x_values = []
+    s_x_values = []
+    
+    rom_eligible_items = [d['ID'] for d in old_items]
+    random.shuffle(rom_eligible_items)
+
+    replacement_items = list(new_items)
+    random.shuffle(replacement_items)
+    
+    use_cost_criterion = True
+
+    for idx in rom_eligible_items:
+        target_cost = ReadItemCost(filebytes, idx)
+        replacement_eligible_items = [itm for itm in replacement_items \
+            if GetCSVItemAllowedByMeleeSimilarityCriterion(itm, a_x_values, m_x_values, s_x_values, 2)\
+            and ((not use_cost_criterion) or ((itm['Cost'] > target_cost * 0.5) and (itm['Cost'] < target_cost * 1.5)))]
+        if use_cost_criterion and (len(replacement_eligible_items) == 0):
+            # try again without cost criterion
+            replacement_eligible_items = [itm for itm in replacement_items \
+                if GetCSVItemAllowedByArmorSimilarityCriterion(itm, helm_x_values, armor_x_values, glove_x_values, shoe_x_values, 3)]
+        chosen_item = PickRandomItemFromCSVItems(replacement_eligible_items)
+        if chosen_item is None:
+            chosen_item = GetItemWithClosestCost(replacement_items, ReadItemCost(filebytes, idx))
+        if chosen_item is not None:
+            WriteCSVItemToSlot(filebytes, idx, chosen_item)
+            AddMeleeCSVItemXValueToExisting(chosen_item, a_x_values, m_x_values, s_x_values)
+            replacement_item_idx = replacement_items.index(chosen_item)
+            del(replacement_items[replacement_item_idx])
+        else:
+            raise Exception("Failed to replace item!")
+    return
+    
+def AddMeleeCSVItemXValueToExisting(chosen_item, a_x_values, m_x_values, s_x_values):
+    tp = int(chosen_item['Type'])
+    x = int(chosen_item['X'])
+    if tp == 0x0B:
+        a_x_values.append(x)
+    if tp == 0x0C:
+        m_x_values.append(x)
+    if tp == 0x06:
+        s_x_values.append(x)
+    return
+    
+def GenerateStrikeAWeapons(new_items):
+    prices = [24, 2060, 10480, 23200, 127, 407, 1000, 3830, 6500, 15887, 32902, 45314, 60964]
+    xs = [2, 6, 9, 11, 3, 4, 5, 7, 8, 10, 12, 13, 14]
+    tp = 0x0B
+    name_prefix = "$A"
+    weight_multiplier = 1.0
+    GenerateStrikeWeapons(tp, prices, xs, name_prefix, weight_multiplier, new_items)
+    return
+    
+def GenerateStrikeMWeapons(new_items):
+    prices = [24, 2060, 10480, 23200, 127, 407, 1000, 3830, 6500, 15887, 32902, 45314, 60964]
+    xs = [2, 6, 9, 11, 3, 4, 5, 7, 8, 10, 12, 13, 14]
+    tp = 0x0C
+    name_prefix = "$M"
+    weight_multiplier = 1.0
+    GenerateStrikeWeapons(tp, prices, xs, name_prefix, weight_multiplier, new_items)
+    return
+
+def GenerateStrikeSWeapons(new_items):
+    prices = [24, 2060, 10480, 23200, 127, 407, 1000, 3830, 6500, 15887, 32902, 45314, 60964]
+    xs = [2, 6, 9, 11, 3, 4, 5, 7, 8, 10, 12, 13, 14]
+    tp = 0x06
+    name_prefix = "$S"
+    weight_multiplier = 0.5
+    GenerateStrikeWeapons(tp, prices, xs, name_prefix, weight_multiplier, new_items)
+    return
+
+def GenerateStrikeWeapons(tp, prices, xs, name_prefix, weight_multiplier, new_items):
+    for i in range(0, len(prices)):
+        new_items.append({ 'ID':-999, 'Name':name_prefix + str(xs[i]), 'Uses':50, 'Cost':prices[i], 'FlagsA':1, 'FlagsB':160, \
+            'Type':tp, 'AltUses':50, 'X':xs[i], 'Y':0, 'GFX':1, 'Group':0, 'SFX':0x18, 'UsedByChrs':"FALSE", 'Weight':0.48 * weight_multiplier, 'New':"TRUE" })
+        # Runic variant
+        new_items.append({ 'ID':-999, 'Name':name_prefix + str(xs[i]) + "RNC", 'Uses':50, 'Cost':int(prices[i]*2.56), 'FlagsA':1, 'FlagsB':168, \
+            'Type':tp, 'AltUses':50, 'X':xs[i], 'Y':0, 'GFX':1, 'Group':0, 'SFX':0x18, 'UsedByChrs':"FALSE", 'Weight':0.14 * weight_multiplier, 'New':"TRUE" })
+        # Defend variant
+        new_items.append({ 'ID':-999, 'Name':name_prefix + str(xs[i]) + "DEF", 'Uses':50, 'Cost':int(prices[i]*1.45), 'FlagsA':1, 'FlagsB':161, \
+            'Type':tp, 'AltUses':50, 'X':xs[i], 'Y':50, 'GFX':1, 'Group':0, 'SFX':0x18, 'UsedByChrs':"FALSE", 'Weight':0.14 * weight_multiplier, 'New':"TRUE" })
+        # Runic and defend variant
+        new_items.append({ 'ID':-999, 'Name':name_prefix + str(xs[i]) + "RD", 'Uses':50, 'Cost':int(prices[i]*3.0), 'FlagsA':1, 'FlagsB':169, \
+            'Type':tp, 'AltUses':50, 'X':xs[i], 'Y':50, 'GFX':1, 'Group':0, 'SFX':0x18, 'UsedByChrs':"FALSE", 'Weight':0.14 * weight_multiplier, 'New':"TRUE" })
+        # Revenge variant
+        new_items.append({ 'ID':-999, 'Name':name_prefix + str(xs[i]) + "RVG", 'Uses':50, 'Cost':int(prices[i]*2.0) + 50000, 'FlagsA':1, 'FlagsB':194, \
+            'Type':tp, 'AltUses':50, 'X':xs[i], 'Y':0, 'GFX':1, 'Group':0, 'SFX':0x18, 'UsedByChrs':"FALSE", 'Weight':0.1 * weight_multiplier, 'New':"TRUE" })
+    return
+    
+def GenerateCritWeapons(new_items):
+    prices = [24, 2060, 10480, 23200, 127, 407, 1000, 3830, 6500, 15887, 32902, 45314, 60964]
+    xs = [2, 6, 9, 11, 3, 4, 5, 7, 8, 10, 12, 13, 14]
+    name_prefix = "$S"
+    for i in range(0, len(prices)):
+        # Coral (CRL)
+        new_items.append({ 'ID':-999, 'Name':name_prefix + str(xs[i]) + "CRL", 'Uses':50, 'Cost':int(prices[i] * 1.3), 'FlagsA':1, 'FlagsB':160, \
+            'Type':8, 'AltUses':50, 'X':xs[i], 'Y':1, 'GFX':1, 'Group':0, 'SFX':0x18, 'UsedByChrs':"FALSE", 'Weight':0.063, 'New':"TRUE" })
+        # Ogre (OGR)
+        new_items.append({ 'ID':-999, 'Name':name_prefix + str(xs[i]) + "OGR", 'Uses':50, 'Cost':int(prices[i] * 1.3), 'FlagsA':1, 'FlagsB':160, \
+            'Type':8, 'AltUses':50, 'X':xs[i], 'Y':2, 'GFX':1, 'Group':0, 'SFX':0x18, 'UsedByChrs':"FALSE", 'Weight':0.063, 'New':"TRUE" })
+        # Dragon (DGN)
+        new_items.append({ 'ID':-999, 'Name':name_prefix + str(xs[i]) + "DGN", 'Uses':50, 'Cost':int(prices[i] * 1.3), 'FlagsA':1, 'FlagsB':160, \
+            'Type':8, 'AltUses':50, 'X':xs[i], 'Y':4, 'GFX':1, 'Group':0, 'SFX':0x18, 'UsedByChrs':"FALSE", 'Weight':0.063, 'New':"TRUE" })
+        # Unholy (SUN)
+        new_items.append({ 'ID':-999, 'Name':name_prefix + str(xs[i]) + "SUN", 'Uses':50, 'Cost':int(prices[i] * 1.3), 'FlagsA':1, 'FlagsB':160, \
+            'Type':8, 'AltUses':50, 'X':xs[i], 'Y':8, 'GFX':1, 'Group':0, 'SFX':0x18, 'UsedByChrs':"FALSE", 'Weight':0.063, 'New':"TRUE" })
+        # All classes (CLS)
+        new_items.append({ 'ID':-999, 'Name':name_prefix + str(xs[i]) + "CLS", 'Uses':50, 'Cost':int(prices[i] * 1.7), 'FlagsA':1, 'FlagsB':160, \
+            'Type':8, 'AltUses':50, 'X':xs[i], 'Y':15, 'GFX':1, 'Group':0, 'SFX':0x18, 'UsedByChrs':"FALSE", 'Weight':0.03, 'New':"TRUE" })
+        # Fire (FLM)
+        new_items.append({ 'ID':-999, 'Name':name_prefix + str(xs[i]) + "FLM", 'Uses':50, 'Cost':int(prices[i] * 1.3), 'FlagsA':1, 'FlagsB':160, \
+            'Type':7, 'AltUses':50, 'X':xs[i], 'Y':1, 'GFX':1, 'Group':0, 'SFX':0x18, 'UsedByChrs':"FALSE", 'Weight':0.063, 'New':"TRUE" })
+        # Ice (ICE)
+        new_items.append({ 'ID':-999, 'Name':name_prefix + str(xs[i]) + "ICE", 'Uses':50, 'Cost':int(prices[i] * 1.3), 'FlagsA':1, 'FlagsB':160, \
+            'Type':7, 'AltUses':50, 'X':xs[i], 'Y':2, 'GFX':1, 'Group':0, 'SFX':0x18, 'UsedByChrs':"FALSE", 'Weight':0.063, 'New':"TRUE" })
+        # Elec (ELC)
+        new_items.append({ 'ID':-999, 'Name':name_prefix + str(xs[i]) + "ELC", 'Uses':50, 'Cost':int(prices[i] * 1.3), 'FlagsA':1, 'FlagsB':160, \
+            'Type':7, 'AltUses':50, 'X':xs[i], 'Y':4, 'GFX':1, 'Group':0, 'SFX':0x18, 'UsedByChrs':"FALSE", 'Weight':0.063, 'New':"TRUE" })
+        # King (KNG)
+        new_items.append({ 'ID':-999, 'Name':name_prefix + str(xs[i]) + "KNG", 'Uses':50, 'Cost':int(prices[i] * 1.7), 'FlagsA':1, 'FlagsB':160, \
+            'Type':7, 'AltUses':50, 'X':xs[i], 'Y':255, 'GFX':1, 'Group':0, 'SFX':0x18, 'UsedByChrs':"FALSE", 'Weight':0.03, 'New':"TRUE" })
+    return
+    
+def RewriteNonMonsterEnemyItems(filebytes, character_abils, original_item_details):
+    for character_idx in range(0x96, 0xac): # 0x96-0xab are non-monster enemies
+        original_race_byte = filebytes[0x0001aae8 + (9 * character_idx)]
+        original_num_abilities = len(character_abils[character_idx])
+        for abil_idx in range(original_num_abilities - 1, -1, -1):
+            abil_id = character_abils[character_idx][abil_idx]
+            if abil_id < 0x80: # items are 0x00-0x80
+                keep = False
+                original_item_type = original_item_details[abil_id]['Type']
+                if original_item_type != 0: # type 0 are non-combat - removing them from inventory doesn't affect enemy stats
+                    original_item_x = original_item_details[abil_id]['X']
+                    type_matches = (original_item_type == ReadItemType(filebytes, abil_id))
+                    x_matches = (original_item_x == ReadItemX(filebytes, abil_id))
+                    if type_matches and x_matches:
+                        keep = True
+                    else:
+                        # Try to find a replacement
+                        original_item_y = original_item_details[abil_id]['Y']
+                        for new_abil_id in range(0x00, 0x80):
+                            new_item_type = ReadItemType(filebytes, new_abil_id)
+                            new_item_x = ReadItemX(filebytes, new_abil_id)
+                            new_item_y = ReadItemY(filebytes, new_abil_id)
+                            if (new_item_type == original_item_type) and (new_item_x == original_item_x) and (new_item_y == original_item_y):
+                                # print("Character", hex(character_idx), "replacing", original_item_details[abil_id]['Name'], "with", ReadItemName(filebytes, new_abil_id))
+                                keep = True
+                                character_abils[character_idx][abil_idx] = new_abil_id
+                                break
+                if not keep:
+                    del(character_abils[character_idx][abil_idx])
+        if len(character_abils[character_idx]) == 0:
+            # Must have at least one ability - add a POTION
+            character_abils[character_idx].append(0x00)
+        final_num_abilities = len(character_abils[character_idx])
+        # Write amended value to the race/meat drop/num abils byte
+        # print(hex(character_idx), original_race_byte, original_num_abilities)
+        filebytes[0x0001aae8 + (9 * character_idx)] = (original_race_byte - (8 * (original_num_abilities - 1))) + (8 * (final_num_abilities - 1))
+    return
+    
+def ApplyIPSPatch(filebytes, patchbytes):
+    patch_offset = 0
+    patch_str = ""
+    for i in range(0, 5):
+        patch_str += chr(patchbytes[i])
+    if not patch_str == "PATCH":
+        return False
+    patch_offset += 5
+    while patch_offset < (len(patchbytes) - 5):
+        chunk_offset = patchbytes[patch_offset + 2] + (patchbytes[patch_offset + 1] << 8) + (patchbytes[patch_offset] << 16)
+        # print(hex(chunk_offset))
+        patch_offset += 3
+        chunk_size = patchbytes[patch_offset + 1] + (patchbytes[patch_offset] << 8)
+        patch_offset += 2        
+        
+        if chunk_size == 0:
+            # RLE chunk (repeated value)
+            rle_size = patchbytes[patch_offset + 1] + (patchbytes[patch_offset] << 8)
+            patch_offset += 2        
+            rle_val = patchbytes[patch_offset]
+            patch_offset += 1
+            for i in range(0, rle_size):
+                filebytes[chunk_offset + i] = rle_val
+        else:
+            # Regular chunk
+            for i in range(0, chunk_size):
+                if (chunk_offset + i) >= len(filebytes):
+                    print("offset out of range:", hex(chunk_offset + i))
+                    return False
+                filebytes[chunk_offset + i] = patchbytes[patch_offset]
+                # print(hex(patchbytes[patch_offset]))
+                patch_offset += 1
+    if patch_offset != (len(patchbytes) - 3):
+        return False
+    patch_str = ""
+    for i in range(0, 3):
+        patch_str += chr(patchbytes[patch_offset + i])
+    if not patch_str == "EOF":
+        return False
+    
+    return True
+    
 def FFLRandomize(seed, rompath, monstercsvpath):
 
     print("seed: ", seed)
@@ -1140,17 +1808,28 @@ def FFLRandomize(seed, rompath, monstercsvpath):
     inf = open(rompath, 'rb')
     filebytes = bytearray(inf.read())
     inf.close()
+    
+    # read bytes from IPS patch file
+    q = pathlib.Path(rompath).with_name("ffltrt16.ips")
+    ipsf = open(q, "rb")
+    ipsfilebytes = bytearray(ipsf.read())
+    ipsf.close()
+    
+    # apply patch
+    success = ApplyIPSPatch(filebytes, ipsfilebytes)
+    if not success:
+        raise Exception("Failed to apply IPS patch. It should be in the same directory as the rom, named \"ffltrt16.ips\"")
 
     ##########################
 
     # TESTS/HACKS
 
     # ExportMeatMonstersCSV(filebytes, rompath)
-    # ExportItemsCSV(filebytes)
-
+    # ExportItemsCSV(filebytes, rompath)
+    
     ##########################
 
-    RandomizeFFLRomBytes(filebytes, monstercsvpath)
+    RandomizeFFLRomBytes(filebytes, monstercsvpath, seed)
 
     # construct output filename
     q = pathlib.Path(rompath).with_name("FFL_" + str(seed) + ".gb")
