@@ -24,6 +24,8 @@ Currently randomized:
 
 Gameplay should hopefully be reasonably balanced between seeds. Let me know if you find a very difficult or very easy seed. The difficulty might not be even within a particular randomized rom, but that's part of the fun. Item costs should be fair. If you find items which seem very cheap or expensive, let me know.
 
+If you want to cheat and see what's in a randomized rom, use Tower Reversed's fledermaus utility.
+
 Future:
 - switches to control which features are randomized
 - randomize non-monster enemies
@@ -50,9 +52,9 @@ Whip example: W45RVG
 
 Ordnance example: O75RNC
 
-Spells: (spellbook symbol)FIRA8 - fire-elemental spell with power 8 that targets all enemies
-FIR, ICE, ELC, FOG, QUK and FRC target one enemy group. Each has a single element, except FRC, which has no element.
-FIRA, TRND, ELCA, ACID, QUKA and FLAR target all enemies.
+Spells: (spellbook symbol)FIRA8 - fire-elemental spell with power 8 that targets all enemies<br/>
+FIR, ICE, ELC, FOG, QUK and FRC target one enemy group. Each has a single element, except FRC, which has no element.<br/>
+FIRA, TRND, ELCA, ACID, QUKA and FLAR target all enemies.<br/>
 
 ## Thanks
 
@@ -62,6 +64,6 @@ Contact: eclipseyy@gmx.com. PLEASE email me with your feedback, suggestions, etc
 
 ## Version history
 
-v0.003 - randomization of other combat items. Bug fixes and balancing tweaks. Undid transforming into non-monster enemies as in practice it's usually unwanted.
-v0.002 - added armor and melee weapon randomization. Greatly improved meat transformation (thanks Tower Reversed). Monsters eating meat now sometimes transform into non-monsters! Automatically apply TR Tweaks patch. Many tweaks.
-v0.001 - initial
+v0.003 - randomization of other combat items. Bug fixes and balancing tweaks. Undid transforming into non-monster enemies as in practice it's usually unwanted.<br/>
+v0.002 - added armor and melee weapon randomization. Greatly improved meat transformation (thanks Tower Reversed). Monsters eating meat now sometimes transform into non-monsters! Automatically apply TR Tweaks patch. Many tweaks.<br/>
+v0.001 - initial<br/>
