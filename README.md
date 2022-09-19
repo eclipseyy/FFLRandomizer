@@ -17,31 +17,51 @@ Currently randomized:
 - meat transformations
 - equipment shop contents
 - chest contents
-- mutant attribute learn rates and amounts (one of four choices)
+- mutant attribute learn rates and amounts (one of four choices - MUTANT will be renamed to S-MUT, A-MUT or D-MUT depending on which attribute is learned most quickly)
 - mutant learnable abilities
 - armor
-- melee weapons
+- combat items
 
-Armor properties are encoded in the item names. Numbers are the defense increase. OICE, XDMG etc are resistances/weaknesses. S, A, M and SA are attribute increases.
-
-Melee weapon names also give you the item properties. S, M and A give the damage type: S for Strength (HAMMER, LONG, AXE etc); M for Mana (P-KNIFE, P-SWORD); A for Agility (RAPIER, SABER etc). The number is the weapon strength. RNC is RUNE type, DEF is DEFEND, RD is both RUNIC and DEFEND, and RVG counters. CRL, OGR, DGN, SUN deal critical hits to single classes, CLS to all four classes. FLM, ICE, ELC deal elemental hits, KNG hits all elements.
-
-Gameplay should hopefully be reasonably balanced between seeds. Let me know if you find a very difficult or very easy seed.
+Gameplay should hopefully be reasonably balanced between seeds. Let me know if you find a very difficult or very easy seed. The difficulty might not be even within a particular randomized rom, but that's part of the fun. Item costs should be fair. If you find items which seem very cheap or expensive, let me know.
 
 Future:
 - switches to control which features are randomized
 - randomize non-monster enemies
-- randomize items
-- investigate and improve meat transformation
 - improve monster CSV
 - etc
+
+## Combat items
+
+Randomized items have their properties encoded into their names.
+
+RNC is RUNE type, DEF is DEFEND, RD is both RUNIC and DEFEND, and RVG counters. FSK, ISK, ESK and PSK grant "special body" with a single element, the same as BURNING or P-SKIN.
+
+Armor example: (armor symbol)5ODMG - armor that gives 5 D points and resistance equivalent to ODAMAGE.
+Numbers are the defense increase. OICE etc are resistances. S, A, M and SA are attribute increases.
+
+Sword example: (sword symbol)A5RNC - agility-based weapon with power 5 and the ability to reflect magic.
+S, M and A give the damage type: S for Strength (HAMMER, LONG, AXE etc); M for Mana (P-KNIFE, P-SWORD); A for Agility (RAPIER, SABER etc). The number is the weapon strength. CRL, OGR, DGN, SUN deal critical hits to single classes, CLS to all four classes. FLM, ICE, ELC deal elemental hits, KNG hits all elements.
+
+Bow example: B100RVG - bow with 100 power and the ability to counter.
+
+Gun example: (gun symbol)50RNC
+
+Whip example: W45RVG
+
+Ordnance example: O75RNC
+
+Spells: (spellbook symbol)FIRA8 - fire-elemental spell with power 8 that targets all enemies
+FIR, ICE, ELC, FOG, QUK and FRC target one enemy group. Each has a single element, except FRC, which has no element.
+FIRA, TRND, ELCA, ACID, QUKA and FLAR target all enemies.
+
+## Thanks
 
 Infinite thanks: https://towerreversed.neocities.org/, the "fledermaus" utility in particular.
 
 Contact: eclipseyy@gmx.com. PLEASE email me with your feedback, suggestions, etc! I haven't spent a lot of time playtesting it, so all feedback is super valuable.
 
-Version history:
+## Version history
 
+v0.003 - randomization of other combat items. Bug fixes and balancing tweaks. Undid transforming into non-monster enemies as in practice it's usually unwanted.
 v0.002 - added armor and melee weapon randomization. Greatly improved meat transformation (thanks Tower Reversed). Monsters eating meat now sometimes transform into non-monsters! Automatically apply TR Tweaks patch. Many tweaks.
-
 v0.001 - initial

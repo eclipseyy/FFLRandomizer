@@ -4,7 +4,7 @@ import pathlib
 import csv
 import sys
 
-VERSION = "0.002"
+VERSION = "0.003"
 
 # contact: eclipseyy@gmx.com
 
@@ -17,7 +17,7 @@ def RandomizeFFLRomBytes(filebytes, monstercsvpath, seed):
     RandomizeMutantAbilityLearnList(filebytes)
 
     RandomizeArmor(filebytes)
-    RandomizeMeleeWeapons(filebytes)
+    RandomizeCombatItems(filebytes)
     
     RewriteHumanAndMutantItems(filebytes, character_abils)
     RewriteNonMonsterEnemyItems(filebytes, character_abils, original_item_details)
@@ -37,6 +37,8 @@ def RandomizeFFLRomBytes(filebytes, monstercsvpath, seed):
     ReplaceMutantRace(filebytes)
     RandomizeMeatTransformationTable(filebytes)
     RandomizeMeatResultLists(filebytes)
+    
+    WriteTeleportFieldEffectToKeyItems(filebytes)
     
     WriteSeedTextToTitleScreen(filebytes, seed)
 
@@ -123,20 +125,18 @@ def RandomizeByteWithinMultipliers(filebytes, idx, min_mult, max_mult):
 
 def RandomizeEquipmentShops(filebytes):
 
-    # There are 11 equipment shops. Each has ten slots, one byte each.
-    # The first starts at 0x00017d38 and shops are spaced 0x14 apart
-    # (the intervening bytes being item shops)
-    
-    min_costs = [12, 12, 80, 100, 500, 500, 2060, 4000, 5000, 24, 8000]
-    max_costs = [500, 1100, 1000, 2500, 9880, 10712, 10712, 32000, 100000, 500, 100000]
-    shop_contains_battle_sword = [False, False, True, True, False, False, False, False, False, False, False]
+    min_costs = [12, 12, 80, 100, 500, 500, 2060, 4000, 5000, 24, 8000, 500, 500]
+    max_costs = [500, 1100, 1000, 2500, 9880, 10712, 10712, 32000, 100000, 500, 100000, 15100, 50000]
+    shop_contains_battle_sword = [False, False, True, True, False, False, False, False, False, False, False, False, False]
+    shop_addrs = [0x17d38, 0x17d4c, 0x17d60, 0x17d74, 0x17d88, 0x17d9c, 0x17db0, 0x17dc4, 0x17dd8, 0x17dec, 0x17e00, 0x17d7e, 0x17dba]
 
-    for i in range(0, 11):
+
+    for i in range(0, len(min_costs)):
 
         min_cost = min_costs[i]
         max_cost = max_costs[i] * 1.2
 
-        shop_start_idx = 0x00017d38 + (0x14 * i)
+        shop_start_idx = shop_addrs[i]
 
         # Need to be able to buy battle sword to advance the story.
         # For now, keep battle sword in any shops that contain it
@@ -958,7 +958,9 @@ def RandomizeMeatResultLists(filebytes):
                             
             if monster_id < 0:
                 # Choose a random monster from any class with the correct meat level
-                id_range = 0xad # Allow transforming into non-monster enemies! Set to 0x96 to disallow this
+                id_range = 0x96
+                #if random.randrange(0, 4) == 0:
+                #    id_range = 0xad # Possibility of transforming into non-monster enemies!
                 id_offset = random.randrange(0, id_range)
                 for i in range(0, id_range):
                     check_monster_id = (i + id_offset) % id_range
@@ -1227,20 +1229,23 @@ def GetCSVItemAllowedByArmorSimilarityCriterion(csv_item, helm_x_values, armor_x
             return False
     return True
     
-def GetCSVItemAllowedByMeleeSimilarityCriterion(csv_item, a_x_values, m_x_values, s_x_values, min_value_difference):
+def GetCSVItemAllowedByTypeSimilarityCriterion(csv_item, type_group_map, group_values, group_value_differences):
     csv_type = int(csv_item['Type'])
     csv_x = int(csv_item['X'])
-    vals = []
-    if (csv_type == 0x0b):
-        vals = a_x_values
-    if (csv_type == 0x0c):
-        vals = m_x_values
-    if (csv_type == 0x06):
-        vals = s_x_values
+    type_group = type_group_map[csv_type]
+    vals = group_values[type_group]
     if csv_x < 3:
-        # allow one weapon at each of level 1 and 2
         return not csv_x in vals
+    min_value_difference = group_value_differences[type_group]
     return not GetValueTooSimilar(vals, csv_x, min_value_difference)
+    
+def AddCSVItemXValueToExisting(chosen_item, type_group_map, group_values):
+    tp = int(chosen_item['Type'])
+    x = int(chosen_item['X'])
+    type_group = type_group_map[tp]
+    vals = group_values[type_group]
+    vals.append(x)
+    return
 
 def AddArmorCSVItemXValueToExisting(csv_item, helm_x_values, armor_x_values, glove_x_values, shoe_x_values):
     csv_type = int(csv_item['Type'])
@@ -1522,12 +1527,11 @@ def GenerateShoes(new_items):
 
 def GenerateDefenseEquipment(prices, xs, base_flag, name_prefix, new_items):
     for i in range(0, len(prices)):
-        flags_vals = [base_flag, base_flag + 64, base_flag + 128]
-        flags_names = ["", ">", "<"]
+        flags_vals = [base_flag, base_flag + 64]
+        flags_names = ["", ">"]
         element_vals = [0, 15, 64, 56, 255]
         elements_names = ["", "DMG", "WPN", "CHG", "ALL"]
         resist_g_multipliers = [1, 1.5, 2.2, 1.4, 3.0]
-        weak_g_multipliers = [1, 0.97, 0.95, 0.97, 0.93]
 
         for flag_idx in range(0, len(flags_vals)):
             num_elements = len(element_vals)
@@ -1542,11 +1546,9 @@ def GenerateDefenseEquipment(prices, xs, base_flag, name_prefix, new_items):
                     cost += 5000 # extra cost for O WEAPON
                 if flag_idx == 1:
                     cost = int(cost * resist_g_multipliers[element_idx])
-                if flag_idx == 2:
-                    cost = int(cost * weak_g_multipliers[element_idx])
-                weight = 0.2
+                weight = 0.4
                 if flag_idx > 0:
-                    weight = 0.1
+                    weight = 0.15
                 new_item = { 'ID':-999, 'Uses':254, 'FlagsB':0, 'Type':0, 'AltUses':254, 'GFX':0, 'Group':0, 'SFX':0, 'UsedByChrs':"FALSE", 'Weight':weight, 'New':"TRUE" }
                 new_item['Name'] = name_prefix + str(xs[i]) + flags_names[flag_idx] + elements_names[element_idx]
                 new_item['Cost'] = cost
@@ -1575,30 +1577,47 @@ def GenerateDefenseEquipment(prices, xs, base_flag, name_prefix, new_items):
             
     return
     
-def RandomizeMeleeWeapons(filebytes):
+def RandomizeCombatItems(filebytes):
     new_items = []
-    GenerateStrikeAWeapons(new_items)
-    GenerateStrikeMWeapons(new_items)
-    GenerateStrikeSWeapons(new_items)
-    GenerateCritWeapons(new_items)
+    GenerateStrikeAWeapons(new_items, 1.0)
+    GenerateStrikeMWeapons(new_items, 1.0)
+    GenerateStrikeSWeapons(new_items, 1.0)
+    GenerateCritWeapons(new_items, 0.5)
+    GenerateBows(new_items, 0.3)
+    GenerateGuns(new_items, 0.3)
+    GenerateWhips(new_items, 0.2)
+    GenerateOrdnances(new_items, 0.3)
+    GenerateAttackSpells(new_items, 0.4)
     old_items = []
-    melee_types = [0x06, 0x08, 0x07, 0x0B, 0x0C]
+    weapon_types = [0x06, 0x08, 0x07, 0x0B, 0x0C, 18, 17, 19, 20, 26, 34, 5, 9, 13, 14, 15, 16, 21, 22, 23, 3, 4, 27, 28, 29]
     for idx in range(0x00, 0x80):
         if idx in [0x11, 0x12, 0x13, 0x23]: # KING items, BATTLE sword
             continue
         tp = ReadItemType(filebytes, idx)
-        if not tp in melee_types:
+        if not tp in weapon_types:
             continue
         if IsAbilUsedByEnemies(filebytes, idx):
             continue
         old_items.append(ReadItemToDict(filebytes, idx))
         
+    reuse_item_types = [5, 9, 13, 14, 15, 16, 21, 22, 23, 3, 4, 27, 28, 29]
+    new_items = new_items + [itm for itm in old_items if (int(itm['Type']) in reuse_item_types)]
+                
     cost_ranges = [[0, 70], [71, 200], [201, 500], [501, 2500], [2501, 5000], [5001, 10000], [10001, 20000], [20001, 9999999]]
     AdjustWeightsByCostRange(cost_ranges, old_items, new_items)
     
-    a_x_values = []
-    m_x_values = []
-    s_x_values = []
+    type_group_map = { 6:6, 7:6, 8:6 } # group Strike (S), Critical (T) and Critical (E) together
+    for t in weapon_types:
+        if not t in type_group_map.keys():
+            type_group_map[t] = t
+    
+    group_value_differences = { 6:3, 11:3, 12:3, 18:50, 17:50, 19:30, 20:30, 26:2 }
+    for g in type_group_map.values():
+        if not g in group_value_differences:
+            group_value_differences[g] = 0
+    group_values = dict()
+    for group in type_group_map.values():
+        group_values[group] = []
     
     rom_eligible_items = [d['ID'] for d in old_items]
     random.shuffle(rom_eligible_items)
@@ -1611,114 +1630,214 @@ def RandomizeMeleeWeapons(filebytes):
     for idx in rom_eligible_items:
         target_cost = ReadItemCost(filebytes, idx)
         replacement_eligible_items = [itm for itm in replacement_items \
-            if GetCSVItemAllowedByMeleeSimilarityCriterion(itm, a_x_values, m_x_values, s_x_values, 2)\
-            and ((not use_cost_criterion) or ((itm['Cost'] > target_cost * 0.5) and (itm['Cost'] < target_cost * 1.5)))]
+            if GetCSVItemAllowedByTypeSimilarityCriterion(itm, type_group_map, group_values, group_value_differences)\
+                and ((not use_cost_criterion) or ((itm['Cost'] > target_cost * 0.5) and (itm['Cost'] < target_cost * 1.5)))]
         if use_cost_criterion and (len(replacement_eligible_items) == 0):
             # try again without cost criterion
             replacement_eligible_items = [itm for itm in replacement_items \
-                if GetCSVItemAllowedByArmorSimilarityCriterion(itm, helm_x_values, armor_x_values, glove_x_values, shoe_x_values, 3)]
+                if GetCSVItemAllowedByTypeSimilarityCriterion(itm, type_group_map, group_values, group_value_differences)]
         chosen_item = PickRandomItemFromCSVItems(replacement_eligible_items)
         if chosen_item is None:
             chosen_item = GetItemWithClosestCost(replacement_items, ReadItemCost(filebytes, idx))
         if chosen_item is not None:
             WriteCSVItemToSlot(filebytes, idx, chosen_item)
-            AddMeleeCSVItemXValueToExisting(chosen_item, a_x_values, m_x_values, s_x_values)
+            AddCSVItemXValueToExisting(chosen_item, type_group_map, group_values)
             replacement_item_idx = replacement_items.index(chosen_item)
             del(replacement_items[replacement_item_idx])
         else:
             raise Exception("Failed to replace item!")
     return
     
-def AddMeleeCSVItemXValueToExisting(chosen_item, a_x_values, m_x_values, s_x_values):
-    tp = int(chosen_item['Type'])
-    x = int(chosen_item['X'])
-    if tp == 0x0B:
-        a_x_values.append(x)
-    if tp == 0x0C:
-        m_x_values.append(x)
-    if tp == 0x06:
-        s_x_values.append(x)
-    return
-    
-def GenerateStrikeAWeapons(new_items):
+def GenerateStrikeAWeapons(new_items, weight_multiplier):
     prices = [24, 2060, 10480, 23200, 127, 407, 1000, 3830, 6500, 15887, 32902, 45314, 60964]
     xs = [2, 6, 9, 11, 3, 4, 5, 7, 8, 10, 12, 13, 14]
     tp = 0x0B
     name_prefix = "$A"
-    weight_multiplier = 1.0
     GenerateStrikeWeapons(tp, prices, xs, name_prefix, weight_multiplier, new_items)
     return
     
-def GenerateStrikeMWeapons(new_items):
+def GenerateStrikeMWeapons(new_items, weight_multiplier):
     prices = [24, 2060, 10480, 23200, 127, 407, 1000, 3830, 6500, 15887, 32902, 45314, 60964]
     xs = [2, 6, 9, 11, 3, 4, 5, 7, 8, 10, 12, 13, 14]
     tp = 0x0C
     name_prefix = "$M"
-    weight_multiplier = 1.0
     GenerateStrikeWeapons(tp, prices, xs, name_prefix, weight_multiplier, new_items)
     return
 
-def GenerateStrikeSWeapons(new_items):
+def GenerateStrikeSWeapons(new_items, weight_multiplier):
     prices = [24, 2060, 10480, 23200, 127, 407, 1000, 3830, 6500, 15887, 32902, 45314, 60964]
     xs = [2, 6, 9, 11, 3, 4, 5, 7, 8, 10, 12, 13, 14]
     tp = 0x06
     name_prefix = "$S"
-    weight_multiplier = 0.5
     GenerateStrikeWeapons(tp, prices, xs, name_prefix, weight_multiplier, new_items)
     return
 
 def GenerateStrikeWeapons(tp, prices, xs, name_prefix, weight_multiplier, new_items):
     for i in range(0, len(prices)):
         new_items.append({ 'ID':-999, 'Name':name_prefix + str(xs[i]), 'Uses':50, 'Cost':prices[i], 'FlagsA':1, 'FlagsB':160, \
-            'Type':tp, 'AltUses':50, 'X':xs[i], 'Y':0, 'GFX':1, 'Group':0, 'SFX':0x18, 'UsedByChrs':"FALSE", 'Weight':0.48 * weight_multiplier, 'New':"TRUE" })
+            'Type':tp, 'AltUses':50, 'X':xs[i], 'Y':0, 'GFX':1, 'Group':0, 'SFX':0x18, 'UsedByChrs':"FALSE", 'Weight':0.21 * weight_multiplier, 'New':"TRUE" })
         # Runic variant
-        new_items.append({ 'ID':-999, 'Name':name_prefix + str(xs[i]) + "RNC", 'Uses':50, 'Cost':int(prices[i]*2.56), 'FlagsA':1, 'FlagsB':168, \
-            'Type':tp, 'AltUses':50, 'X':xs[i], 'Y':0, 'GFX':1, 'Group':0, 'SFX':0x18, 'UsedByChrs':"FALSE", 'Weight':0.14 * weight_multiplier, 'New':"TRUE" })
+        new_items.append({ 'ID':-999, 'Name':name_prefix + str(xs[i]) + "RNC", 'Uses':50, 'Cost':int(prices[i]*1.05), 'FlagsA':1, 'FlagsB':168, \
+            'Type':tp, 'AltUses':50, 'X':xs[i], 'Y':0, 'GFX':1, 'Group':0, 'SFX':0x18, 'UsedByChrs':"FALSE", 'Weight':0.11 * weight_multiplier, 'New':"TRUE" })
         # Defend variant
-        new_items.append({ 'ID':-999, 'Name':name_prefix + str(xs[i]) + "DEF", 'Uses':50, 'Cost':int(prices[i]*1.45), 'FlagsA':1, 'FlagsB':161, \
-            'Type':tp, 'AltUses':50, 'X':xs[i], 'Y':50, 'GFX':1, 'Group':0, 'SFX':0x18, 'UsedByChrs':"FALSE", 'Weight':0.14 * weight_multiplier, 'New':"TRUE" })
+        new_items.append({ 'ID':-999, 'Name':name_prefix + str(xs[i]) + "DEF", 'Uses':50, 'Cost':int(prices[i]*1.05), 'FlagsA':1, 'FlagsB':161, \
+            'Type':tp, 'AltUses':50, 'X':xs[i], 'Y':50, 'GFX':1, 'Group':0, 'SFX':0x18, 'UsedByChrs':"FALSE", 'Weight':0.11 * weight_multiplier, 'New':"TRUE" })
         # Runic and defend variant
-        new_items.append({ 'ID':-999, 'Name':name_prefix + str(xs[i]) + "RD", 'Uses':50, 'Cost':int(prices[i]*3.0), 'FlagsA':1, 'FlagsB':169, \
-            'Type':tp, 'AltUses':50, 'X':xs[i], 'Y':50, 'GFX':1, 'Group':0, 'SFX':0x18, 'UsedByChrs':"FALSE", 'Weight':0.14 * weight_multiplier, 'New':"TRUE" })
+        new_items.append({ 'ID':-999, 'Name':name_prefix + str(xs[i]) + "RD", 'Uses':50, 'Cost':int(prices[i]*1.1), 'FlagsA':1, 'FlagsB':169, \
+            'Type':tp, 'AltUses':50, 'X':xs[i], 'Y':50, 'GFX':1, 'Group':0, 'SFX':0x18, 'UsedByChrs':"FALSE", 'Weight':0.11 * weight_multiplier, 'New':"TRUE" })
+        # Fire skin variant
+        new_items.append({ 'ID':-999, 'Name':name_prefix + str(xs[i]) + "FSK", 'Uses':50, 'Cost':int(prices[i]*1.05), 'FlagsA':1, 'FlagsB':176, \
+            'Type':tp, 'AltUses':50, 'X':xs[i], 'Y':1, 'GFX':1, 'Group':0, 'SFX':0x18, 'UsedByChrs':"FALSE", 'Weight':0.11 * weight_multiplier, 'New':"TRUE" })
+        # Ice skin variant
+        new_items.append({ 'ID':-999, 'Name':name_prefix + str(xs[i]) + "ISK", 'Uses':50, 'Cost':int(prices[i]*1.05), 'FlagsA':1, 'FlagsB':176, \
+            'Type':tp, 'AltUses':50, 'X':xs[i], 'Y':2, 'GFX':1, 'Group':0, 'SFX':0x18, 'UsedByChrs':"FALSE", 'Weight':0.11 * weight_multiplier, 'New':"TRUE" })
+        # Elec skin variant
+        new_items.append({ 'ID':-999, 'Name':name_prefix + str(xs[i]) + "ESK", 'Uses':50, 'Cost':int(prices[i]*1.05), 'FlagsA':1, 'FlagsB':176, \
+            'Type':tp, 'AltUses':50, 'X':xs[i], 'Y':4, 'GFX':1, 'Group':0, 'SFX':0x18, 'UsedByChrs':"FALSE", 'Weight':0.11 * weight_multiplier, 'New':"TRUE" })
+        # Poison skin variant
+        new_items.append({ 'ID':-999, 'Name':name_prefix + str(xs[i]) + "PSK", 'Uses':50, 'Cost':int(prices[i]*1.05), 'FlagsA':1, 'FlagsB':176, \
+            'Type':tp, 'AltUses':50, 'X':xs[i], 'Y':8, 'GFX':1, 'Group':0, 'SFX':0x18, 'UsedByChrs':"FALSE", 'Weight':0.11 * weight_multiplier, 'New':"TRUE" })
         # Revenge variant
-        new_items.append({ 'ID':-999, 'Name':name_prefix + str(xs[i]) + "RVG", 'Uses':50, 'Cost':int(prices[i]*2.0) + 50000, 'FlagsA':1, 'FlagsB':194, \
-            'Type':tp, 'AltUses':50, 'X':xs[i], 'Y':0, 'GFX':1, 'Group':0, 'SFX':0x18, 'UsedByChrs':"FALSE", 'Weight':0.1 * weight_multiplier, 'New':"TRUE" })
+        new_items.append({ 'ID':-999, 'Name':name_prefix + str(xs[i]) + "RVG", 'Uses':50, 'Cost':int(prices[i]*1.5) + 50000, 'FlagsA':1, 'FlagsB':162, \
+            'Type':tp, 'AltUses':50, 'X':xs[i], 'Y':0, 'GFX':1, 'Group':0, 'SFX':0x18, 'UsedByChrs':"FALSE", 'Weight':0.053 * weight_multiplier, 'New':"TRUE" })
     return
     
-def GenerateCritWeapons(new_items):
+def GenerateCritWeapons(new_items, weight_multiplier):
     prices = [24, 2060, 10480, 23200, 127, 407, 1000, 3830, 6500, 15887, 32902, 45314, 60964]
     xs = [2, 6, 9, 11, 3, 4, 5, 7, 8, 10, 12, 13, 14]
     name_prefix = "$S"
     for i in range(0, len(prices)):
         # Coral (CRL)
-        new_items.append({ 'ID':-999, 'Name':name_prefix + str(xs[i]) + "CRL", 'Uses':50, 'Cost':int(prices[i] * 1.3), 'FlagsA':1, 'FlagsB':160, \
-            'Type':8, 'AltUses':50, 'X':xs[i], 'Y':1, 'GFX':1, 'Group':0, 'SFX':0x18, 'UsedByChrs':"FALSE", 'Weight':0.063, 'New':"TRUE" })
+        new_items.append({ 'ID':-999, 'Name':name_prefix + str(xs[i]) + "CRL", 'Uses':50, 'Cost':int(prices[i] * 1.05), 'FlagsA':1, 'FlagsB':160, \
+            'Type':8, 'AltUses':50, 'X':xs[i], 'Y':1, 'GFX':1, 'Group':0, 'SFX':0x18, 'UsedByChrs':"FALSE", 'Weight':0.125 * weight_multiplier, 'New':"TRUE" })
         # Ogre (OGR)
-        new_items.append({ 'ID':-999, 'Name':name_prefix + str(xs[i]) + "OGR", 'Uses':50, 'Cost':int(prices[i] * 1.3), 'FlagsA':1, 'FlagsB':160, \
-            'Type':8, 'AltUses':50, 'X':xs[i], 'Y':2, 'GFX':1, 'Group':0, 'SFX':0x18, 'UsedByChrs':"FALSE", 'Weight':0.063, 'New':"TRUE" })
+        new_items.append({ 'ID':-999, 'Name':name_prefix + str(xs[i]) + "OGR", 'Uses':50, 'Cost':int(prices[i] * 1.05), 'FlagsA':1, 'FlagsB':160, \
+            'Type':8, 'AltUses':50, 'X':xs[i], 'Y':2, 'GFX':1, 'Group':0, 'SFX':0x18, 'UsedByChrs':"FALSE", 'Weight':0.125 * weight_multiplier, 'New':"TRUE" })
         # Dragon (DGN)
-        new_items.append({ 'ID':-999, 'Name':name_prefix + str(xs[i]) + "DGN", 'Uses':50, 'Cost':int(prices[i] * 1.3), 'FlagsA':1, 'FlagsB':160, \
-            'Type':8, 'AltUses':50, 'X':xs[i], 'Y':4, 'GFX':1, 'Group':0, 'SFX':0x18, 'UsedByChrs':"FALSE", 'Weight':0.063, 'New':"TRUE" })
+        new_items.append({ 'ID':-999, 'Name':name_prefix + str(xs[i]) + "DGN", 'Uses':50, 'Cost':int(prices[i] * 1.05), 'FlagsA':1, 'FlagsB':160, \
+            'Type':8, 'AltUses':50, 'X':xs[i], 'Y':4, 'GFX':1, 'Group':0, 'SFX':0x18, 'UsedByChrs':"FALSE", 'Weight':0.125 * weight_multiplier, 'New':"TRUE" })
         # Unholy (SUN)
-        new_items.append({ 'ID':-999, 'Name':name_prefix + str(xs[i]) + "SUN", 'Uses':50, 'Cost':int(prices[i] * 1.3), 'FlagsA':1, 'FlagsB':160, \
-            'Type':8, 'AltUses':50, 'X':xs[i], 'Y':8, 'GFX':1, 'Group':0, 'SFX':0x18, 'UsedByChrs':"FALSE", 'Weight':0.063, 'New':"TRUE" })
+        new_items.append({ 'ID':-999, 'Name':name_prefix + str(xs[i]) + "SUN", 'Uses':50, 'Cost':int(prices[i] * 1.05), 'FlagsA':1, 'FlagsB':160, \
+            'Type':8, 'AltUses':50, 'X':xs[i], 'Y':8, 'GFX':1, 'Group':0, 'SFX':0x18, 'UsedByChrs':"FALSE", 'Weight':0.125 * weight_multiplier, 'New':"TRUE" })
         # All classes (CLS)
-        new_items.append({ 'ID':-999, 'Name':name_prefix + str(xs[i]) + "CLS", 'Uses':50, 'Cost':int(prices[i] * 1.7), 'FlagsA':1, 'FlagsB':160, \
-            'Type':8, 'AltUses':50, 'X':xs[i], 'Y':15, 'GFX':1, 'Group':0, 'SFX':0x18, 'UsedByChrs':"FALSE", 'Weight':0.03, 'New':"TRUE" })
+        new_items.append({ 'ID':-999, 'Name':name_prefix + str(xs[i]) + "CLS", 'Uses':50, 'Cost':int(prices[i] * 1.1), 'FlagsA':1, 'FlagsB':160, \
+            'Type':8, 'AltUses':50, 'X':xs[i], 'Y':15, 'GFX':1, 'Group':0, 'SFX':0x18, 'UsedByChrs':"FALSE", 'Weight':0.0625 * weight_multiplier, 'New':"TRUE" })
         # Fire (FLM)
-        new_items.append({ 'ID':-999, 'Name':name_prefix + str(xs[i]) + "FLM", 'Uses':50, 'Cost':int(prices[i] * 1.3), 'FlagsA':1, 'FlagsB':160, \
-            'Type':7, 'AltUses':50, 'X':xs[i], 'Y':1, 'GFX':1, 'Group':0, 'SFX':0x18, 'UsedByChrs':"FALSE", 'Weight':0.063, 'New':"TRUE" })
+        new_items.append({ 'ID':-999, 'Name':name_prefix + str(xs[i]) + "FLM", 'Uses':50, 'Cost':int(prices[i] * 1.05), 'FlagsA':1, 'FlagsB':160, \
+            'Type':7, 'AltUses':50, 'X':xs[i], 'Y':1, 'GFX':1, 'Group':0, 'SFX':0x18, 'UsedByChrs':"FALSE", 'Weight':0.125 * weight_multiplier, 'New':"TRUE" })
         # Ice (ICE)
-        new_items.append({ 'ID':-999, 'Name':name_prefix + str(xs[i]) + "ICE", 'Uses':50, 'Cost':int(prices[i] * 1.3), 'FlagsA':1, 'FlagsB':160, \
-            'Type':7, 'AltUses':50, 'X':xs[i], 'Y':2, 'GFX':1, 'Group':0, 'SFX':0x18, 'UsedByChrs':"FALSE", 'Weight':0.063, 'New':"TRUE" })
+        new_items.append({ 'ID':-999, 'Name':name_prefix + str(xs[i]) + "ICE", 'Uses':50, 'Cost':int(prices[i] * 1.05), 'FlagsA':1, 'FlagsB':160, \
+            'Type':7, 'AltUses':50, 'X':xs[i], 'Y':2, 'GFX':1, 'Group':0, 'SFX':0x18, 'UsedByChrs':"FALSE", 'Weight':0.125 * weight_multiplier, 'New':"TRUE" })
         # Elec (ELC)
-        new_items.append({ 'ID':-999, 'Name':name_prefix + str(xs[i]) + "ELC", 'Uses':50, 'Cost':int(prices[i] * 1.3), 'FlagsA':1, 'FlagsB':160, \
-            'Type':7, 'AltUses':50, 'X':xs[i], 'Y':4, 'GFX':1, 'Group':0, 'SFX':0x18, 'UsedByChrs':"FALSE", 'Weight':0.063, 'New':"TRUE" })
-        # King (KNG)
-        new_items.append({ 'ID':-999, 'Name':name_prefix + str(xs[i]) + "KNG", 'Uses':50, 'Cost':int(prices[i] * 1.7), 'FlagsA':1, 'FlagsB':160, \
-            'Type':7, 'AltUses':50, 'X':xs[i], 'Y':255, 'GFX':1, 'Group':0, 'SFX':0x18, 'UsedByChrs':"FALSE", 'Weight':0.03, 'New':"TRUE" })
+        new_items.append({ 'ID':-999, 'Name':name_prefix + str(xs[i]) + "ELC", 'Uses':50, 'Cost':int(prices[i] * 1.05), 'FlagsA':1, 'FlagsB':160, \
+            'Type':7, 'AltUses':50, 'X':xs[i], 'Y':4, 'GFX':1, 'Group':0, 'SFX':0x18, 'UsedByChrs':"FALSE", 'Weight':0.125 * weight_multiplier, 'New':"TRUE" })
+        # "King" (all elements) (KNG)
+        new_items.append({ 'ID':-999, 'Name':name_prefix + str(xs[i]) + "KNG", 'Uses':50, 'Cost':int(prices[i] * 1.1), 'FlagsA':1, 'FlagsB':160, \
+            'Type':7, 'AltUses':50, 'X':xs[i], 'Y':255, 'GFX':1, 'Group':0, 'SFX':0x18, 'UsedByChrs':"FALSE", 'Weight':0.0625 * weight_multiplier, 'New':"TRUE" })
     return
     
+def GenerateBows(new_items, weight_multiplier):
+    prices = [50, 8000, 32000, 84, 138, 228, 375, 619, 1020, 1681, 2772, 4571, 12424, 20484, 55681]
+    xs = [20, 120, 150, 30, 40, 50, 60, 70, 80, 90, 100, 110, 130, 140, 160]
+    ys = [33, 41, 58, 33, 34, 34, 34, 35, 35, 36, 38, 39, 46, 51, 70]
+    name_prefix = "B"
+    for i in range(0, len(prices)):
+        new_items.append({ 'ID':-999, 'Name':name_prefix + str(xs[i]), 'Uses':50, 'Cost':prices[i], 'FlagsA':1, 'FlagsB':128, \
+            'Type':18, 'AltUses':50, 'X':xs[i], 'Y':ys[i], 'GFX':2, 'Group':0, 'SFX':19, 'UsedByChrs':"FALSE", 'Weight':0.7 * weight_multiplier, 'New':"TRUE" })
+        # Runic variant
+        new_items.append({ 'ID':-999, 'Name':name_prefix + str(xs[i]) + "RNC", 'Uses':50, 'Cost':int(prices[i] * 1.05), 'FlagsA':1, 'FlagsB':136, \
+            'Type':18, 'AltUses':50, 'X':xs[i], 'Y':ys[i], 'GFX':2, 'Group':0, 'SFX':19, 'UsedByChrs':"FALSE", 'Weight':0.2 * weight_multiplier, 'New':"TRUE" })
+        # Revenge variant
+        new_items.append({ 'ID':-999, 'Name':name_prefix + str(xs[i]) + "RVG", 'Uses':50, 'Cost':int(prices[i] * 1.5) + 50000, 'FlagsA':1, 'FlagsB':130, \
+            'Type':18, 'AltUses':50, 'X':xs[i], 'Y':ys[i], 'GFX':2, 'Group':0, 'SFX':19, 'UsedByChrs':"FALSE", 'Weight':0.1 * weight_multiplier, 'New':"TRUE" })
+    return
+    
+def GenerateGuns(new_items, weight_multiplier):
+    prices = [80, 800, 8000, 113, 140, 174, 217, 270, 335, 519, 802, 997, 1240, 1543, 1918, 2386, 2967, 3689, 4588, 5706, 7096]
+    xs = [40, 130, 250, 50, 60, 70, 80, 90, 100, 120, 140, 150, 160, 170, 180, 190, 200, 210, 220, 230, 240]
+    ys = [35, 46, 65, 36, 37, 38, 40, 41, 42, 45, 48, 49, 51, 53, 54, 56, 58, 59, 61, 63, 65]
+    name_prefix = "^"
+    for i in range(0, len(prices)):
+        new_items.append({ 'ID':-999, 'Name':name_prefix + str(xs[i]), 'Uses':30, 'Cost':prices[i], 'FlagsA':1, 'FlagsB':128, \
+            'Type':17, 'AltUses':30, 'X':xs[i], 'Y':ys[i], 'GFX':3, 'Group':0, 'SFX':20, 'UsedByChrs':"FALSE", 'Weight':0.7 * weight_multiplier, 'New':"TRUE" })
+        # Runic variant
+        new_items.append({ 'ID':-999, 'Name':name_prefix + str(xs[i]) + "RNC", 'Uses':30, 'Cost':int(prices[i] * 1.05), 'FlagsA':1, 'FlagsB':136, \
+            'Type':17, 'AltUses':30, 'X':xs[i], 'Y':ys[i], 'GFX':3, 'Group':0, 'SFX':20, 'UsedByChrs':"FALSE", 'Weight':0.2 * weight_multiplier, 'New':"TRUE" })
+        # Revenge variant
+        new_items.append({ 'ID':-999, 'Name':name_prefix + str(xs[i]) + "RVG", 'Uses':30, 'Cost':int(prices[i] * 1.5) + 50000, 'FlagsA':1, 'FlagsB':130, \
+            'Type':17, 'AltUses':30, 'X':xs[i], 'Y':ys[i], 'GFX':3, 'Group':0, 'SFX':20, 'UsedByChrs':"FALSE", 'Weight':0.1 * weight_multiplier, 'New':"TRUE" })
+    return
+
+def GenerateWhips(new_items, weight_multiplier):
+    prices = [80, 800, 213, 361, 2499, 7185, 20656]
+    xs = [15, 70, 30, 45, 100, 130, 160]
+    ys = [67, 51, 63, 57, 49, 48, 47]
+    name_prefix = "W"
+    for i in range(0, len(prices)):
+        new_items.append({ 'ID':-999, 'Name':name_prefix + str(xs[i]), 'Uses':50, 'Cost':prices[i], 'FlagsA':1, 'FlagsB':160, \
+            'Type':19, 'AltUses':50, 'X':xs[i], 'Y':ys[i], 'GFX':1, 'Group':0, 'SFX':30, 'UsedByChrs':"FALSE", 'Weight':0.7 * weight_multiplier, 'New':"TRUE" })
+        # Runic variant
+        new_items.append({ 'ID':-999, 'Name':name_prefix + str(xs[i]) + "RNC", 'Uses':50, 'Cost':int(prices[i] * 1.05), 'FlagsA':1, 'FlagsB':168, \
+            'Type':19, 'AltUses':50, 'X':xs[i], 'Y':ys[i], 'GFX':1, 'Group':0, 'SFX':30, 'UsedByChrs':"FALSE", 'Weight':0.2 * weight_multiplier, 'New':"TRUE" })
+        # Revenge variant
+        new_items.append({ 'ID':-999, 'Name':name_prefix + str(xs[i]) + "RVG", 'Uses':50, 'Cost':int(prices[i] * 1.5) + 50000, 'FlagsA':1, 'FlagsB':162, \
+            'Type':19, 'AltUses':50, 'X':xs[i], 'Y':ys[i], 'GFX':1, 'Group':0, 'SFX':30, 'UsedByChrs':"FALSE", 'Weight':0.1 * weight_multiplier, 'New':"TRUE" })
+    return
+
+def GenerateOrdnances(new_items, weight_multiplier):
+    prices = [400, 800, 4000, 8000, 130, 145, 202, 601, 1789, 5328, 27384]
+    xs = [50, 100, 150, 200, 5, 10, 25, 75, 125, 175, 250]
+    ys = [25, 50, 100, 150, 5, 5, 10, 50, 100, 150, 200]
+    gfxs = [10, 9, 9, 10, 10, 10, 10, 10, 10, 9, 9]
+    sfxs = [13, 5, 5, 13, 13, 13, 13, 13, 13, 5, 5]
+    name_prefix = "O"
+    for i in range(0, len(prices)):
+        new_items.append({ 'ID':-999, 'Name':name_prefix + str(xs[i]), 'Uses':20, 'Cost':prices[i], 'FlagsA':1, 'FlagsB':128, \
+            'Type':20, 'AltUses':20, 'X':xs[i], 'Y':ys[i], 'GFX':gfxs[i], 'Group':128, 'SFX':sfxs[i], 'UsedByChrs':"FALSE", 'Weight':0.7 * weight_multiplier, 'New':"TRUE" })
+        # Runic variant
+        new_items.append({ 'ID':-999, 'Name':name_prefix + str(xs[i]) + "RNC", 'Uses':20, 'Cost':int(prices[i] * 1.05), 'FlagsA':1, 'FlagsB':136, \
+            'Type':20, 'AltUses':20, 'X':xs[i], 'Y':ys[i], 'GFX':gfxs[i], 'Group':128, 'SFX':sfxs[i], 'UsedByChrs':"FALSE", 'Weight':0.2 * weight_multiplier, 'New':"TRUE" })
+        # Revenge variant
+        new_items.append({ 'ID':-999, 'Name':name_prefix + str(xs[i]) + "RVG", 'Uses':20, 'Cost':int(prices[i] * 1.5) + 50000, 'FlagsA':1, 'FlagsB':130, \
+            'Type':20, 'AltUses':20, 'X':xs[i], 'Y':ys[i], 'GFX':gfxs[i], 'Group':128, 'SFX':sfxs[i], 'UsedByChrs':"FALSE", 'Weight':0.1 * weight_multiplier, 'New':"TRUE" })
+    return
+    
+def GenerateAttackSpells(new_items, weight_multiplier):
+    prices = [500, 1000, 2000, 5000, 10000, 30000]
+    xs = [5, 6, 7, 8, 9, 10]
+    name_prefix = "%"
+    for i in range(0, len(prices)):
+        new_items.append({ 'ID':-999, 'Name':name_prefix + "FIR" + str(xs[i]), 'Uses':20, 'Cost':prices[i], 'FlagsA':1, 'FlagsB':128, \
+            'Type':26, 'AltUses':20, 'X':xs[i], 'Y':1, 'GFX':7, 'Group':128, 'SFX':12, 'UsedByChrs':"FALSE", 'Weight':0.15 * weight_multiplier, 'New':"TRUE" })
+        new_items.append({ 'ID':-999, 'Name':name_prefix + "FIRA" + str(xs[i]), 'Uses':20, 'Cost':prices[i] + 20000, 'FlagsA':1, 'FlagsB':192, \
+            'Type':34, 'AltUses':20, 'X':xs[i], 'Y':1, 'GFX':7, 'Group':0, 'SFX':12, 'UsedByChrs':"FALSE", 'Weight':0.05 * weight_multiplier, 'New':"TRUE" })
+        
+        new_items.append({ 'ID':-999, 'Name':name_prefix + "ICE" + str(xs[i]), 'Uses':20, 'Cost':prices[i], 'FlagsA':1, 'FlagsB':128, \
+            'Type':26, 'AltUses':20, 'X':xs[i], 'Y':2, 'GFX':8, 'Group':128, 'SFX':34, 'UsedByChrs':"FALSE", 'Weight':0.15 * weight_multiplier, 'New':"TRUE" })
+        new_items.append({ 'ID':-999, 'Name':name_prefix + "TRND" + str(xs[i]), 'Uses':20, 'Cost':prices[i] + 20000, 'FlagsA':1, 'FlagsB':192, \
+            'Type':34, 'AltUses':20, 'X':xs[i], 'Y':2, 'GFX':80, 'Group':0, 'SFX':36, 'UsedByChrs':"FALSE", 'Weight':0.05 * weight_multiplier, 'New':"TRUE" })
+        
+        new_items.append({ 'ID':-999, 'Name':name_prefix + "ELC" + str(xs[i]), 'Uses':20, 'Cost':prices[i], 'FlagsA':1, 'FlagsB':128, \
+            'Type':26, 'AltUses':20, 'X':xs[i], 'Y':4, 'GFX':6, 'Group':128, 'SFX':33, 'UsedByChrs':"FALSE", 'Weight':0.15 * weight_multiplier, 'New':"TRUE" })
+        new_items.append({ 'ID':-999, 'Name':name_prefix + "ELCA" + str(xs[i]), 'Uses':20, 'Cost':prices[i] + 20000, 'FlagsA':1, 'FlagsB':192, \
+            'Type':34, 'AltUses':20, 'X':xs[i], 'Y':4, 'GFX':6, 'Group':0, 'SFX':33, 'UsedByChrs':"FALSE", 'Weight':0.05 * weight_multiplier, 'New':"TRUE" })
+
+        new_items.append({ 'ID':-999, 'Name':name_prefix + "FOG" + str(xs[i]), 'Uses':20, 'Cost':prices[i], 'FlagsA':1, 'FlagsB':128, \
+            'Type':26, 'AltUses':20, 'X':xs[i], 'Y':8, 'GFX':13, 'Group':128, 'SFX':28, 'UsedByChrs':"FALSE", 'Weight':0.15 * weight_multiplier, 'New':"TRUE" })
+        new_items.append({ 'ID':-999, 'Name':name_prefix + "ACID" + str(xs[i]), 'Uses':20, 'Cost':prices[i] + 20000, 'FlagsA':1, 'FlagsB':192, \
+            'Type':34, 'AltUses':20, 'X':xs[i], 'Y':8, 'GFX':64, 'Group':0, 'SFX':4, 'UsedByChrs':"FALSE", 'Weight':0.05 * weight_multiplier, 'New':"TRUE" })
+
+        new_items.append({ 'ID':-999, 'Name':name_prefix + "QUK" + str(xs[i]), 'Uses':20, 'Cost':prices[i], 'FlagsA':1, 'FlagsB':128, \
+            'Type':26, 'AltUses':20, 'X':xs[i], 'Y':0x80, 'GFX':32, 'Group':128, 'SFX':31, 'UsedByChrs':"FALSE", 'Weight':0.15 * weight_multiplier, 'New':"TRUE" })
+        new_items.append({ 'ID':-999, 'Name':name_prefix + "QUKA" + str(xs[i]), 'Uses':20, 'Cost':prices[i] + 20000, 'FlagsA':1, 'FlagsB':192, \
+            'Type':34, 'AltUses':20, 'X':xs[i], 'Y':0x80, 'GFX':32, 'Group':0, 'SFX':31, 'UsedByChrs':"FALSE", 'Weight':0.05 * weight_multiplier, 'New':"TRUE" })
+
+        new_items.append({ 'ID':-999, 'Name':name_prefix + "FRC" + str(xs[i]), 'Uses':20, 'Cost':prices[i], 'FlagsA':1, 'FlagsB':128, \
+            'Type':26, 'AltUses':20, 'X':xs[i], 'Y':0, 'GFX':156, 'Group':128, 'SFX':2, 'UsedByChrs':"FALSE", 'Weight':0.15 * weight_multiplier, 'New':"TRUE" })
+        new_items.append({ 'ID':-999, 'Name':name_prefix + "FLAR" + str(xs[i]), 'Uses':20, 'Cost':prices[i] + 20000, 'FlagsA':1, 'FlagsB':192, \
+            'Type':34, 'AltUses':20, 'X':xs[i], 'Y':0x80, 'GFX':156, 'Group':0, 'SFX':2, 'UsedByChrs':"FALSE", 'Weight':0.05 * weight_multiplier, 'New':"TRUE" })
+    return
+
 def RewriteNonMonsterEnemyItems(filebytes, character_abils, original_item_details):
     for character_idx in range(0x96, 0xac): # 0x96-0xab are non-monster enemies
         original_race_byte = filebytes[0x0001aae8 + (9 * character_idx)]
@@ -1755,6 +1874,16 @@ def RewriteNonMonsterEnemyItems(filebytes, character_abils, original_item_detail
         # Write amended value to the race/meat drop/num abils byte
         # print(hex(character_idx), original_race_byte, original_num_abilities)
         filebytes[0x0001aae8 + (9 * character_idx)] = (original_race_byte - (8 * (original_num_abilities - 1))) + (8 * (final_num_abilities - 1))
+    return
+    
+def WriteTeleportFieldEffectToKeyItems(filebytes):
+    key_items = [0x18, 0x19, 0x1a, 0x1e, 0x1f, 0x48, 0x4a] # the three KEYs, ROM, BOARD, N.BOMB and HYPER
+    for itm in key_items:
+        WriteItemFieldEffectA(filebytes, itm, 0x77)
+        WriteItemFieldEffectB(filebytes, itm, 0x37)
+        flags_a = ReadItemFlagsA(filebytes, itm)
+        flags_a |= 0x02 # usable in field
+        WriteItemFlagsA(filebytes, itm, flags_a)
     return
     
 def ApplyIPSPatch(filebytes, patchbytes):
