@@ -4,7 +4,7 @@ import pathlib
 import csv
 import sys
 
-VERSION = "0.003"
+VERSION = "0.004"
 
 # contact: eclipseyy@gmx.com
 
@@ -37,8 +37,6 @@ def RandomizeFFLRomBytes(filebytes, monstercsvpath, seed):
     ReplaceMutantRace(filebytes)
     RandomizeMeatTransformationTable(filebytes)
     RandomizeMeatResultLists(filebytes)
-    
-    WriteTeleportFieldEffectToKeyItems(filebytes)
     
     WriteSeedTextToTitleScreen(filebytes, seed)
 
@@ -472,20 +470,6 @@ def ReadItemSFX(filebytes, item_id):
 
 def WriteItemSFX(filebytes, item_id, val):
     filebytes[0x0001b707 + (item_id * 8)] |= (val & 0x7f)
-    return
-
-def ReadItemFieldEffectA(filebytes, item_id):
-    return filebytes[0x00003739 + (item_id * 2)]
-
-def WriteItemFieldEffectA(filebytes, item_id, val):
-    filebytes[0x00003739 + (item_id * 2)] = val
-    return
-
-def ReadItemFieldEffectB(filebytes, item_id):
-    return filebytes[0x0000373a + (item_id * 2)]
-
-def WriteItemFieldEffectB(filebytes, item_id, val):
-    filebytes[0x0000373a + (item_id * 2)] = val
     return
 
 def ReadMeatLevel(filebytes, character_id):
@@ -1874,16 +1858,6 @@ def RewriteNonMonsterEnemyItems(filebytes, character_abils, original_item_detail
         # Write amended value to the race/meat drop/num abils byte
         # print(hex(character_idx), original_race_byte, original_num_abilities)
         filebytes[0x0001aae8 + (9 * character_idx)] = (original_race_byte - (8 * (original_num_abilities - 1))) + (8 * (final_num_abilities - 1))
-    return
-    
-def WriteTeleportFieldEffectToKeyItems(filebytes):
-    key_items = [0x18, 0x19, 0x1a, 0x1e, 0x1f, 0x48, 0x4a] # the three KEYs, ROM, BOARD, N.BOMB and HYPER
-    for itm in key_items:
-        WriteItemFieldEffectA(filebytes, itm, 0x77)
-        WriteItemFieldEffectB(filebytes, itm, 0x37)
-        flags_a = ReadItemFlagsA(filebytes, itm)
-        flags_a |= 0x02 # usable in field
-        WriteItemFlagsA(filebytes, itm, flags_a)
     return
     
 def ApplyIPSPatch(filebytes, patchbytes):

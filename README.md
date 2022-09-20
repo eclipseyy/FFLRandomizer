@@ -64,6 +64,7 @@ Contact: eclipseyy@gmx.com. PLEASE email me with your feedback, suggestions, etc
 
 ## Version history
 
+v0.004 - bug fix
 v0.003 - randomization of other combat items. Bug fixes and balancing tweaks. Undid transforming into non-monster enemies as in practice it's usually unwanted.<br/>
 v0.002 - added armor and melee weapon randomization. Greatly improved meat transformation (thanks Tower Reversed). Monsters eating meat now sometimes transform into non-monsters! Automatically apply TR Tweaks patch. Many tweaks.<br/>
 v0.001 - initial<br/>
