@@ -4,39 +4,116 @@ import pathlib
 import csv
 import sys
 
-VERSION = "0.004"
+VERSION = "0.005"
 
 # contact: eclipseyy@gmx.com
 
-def RandomizeFFLRomBytes(filebytes, monstercsvpath, seed):
+# option definitions
+MUTANT_ABILITIES = 0
+ARMOR = 1
+COMBAT_ITEMS = 2
+CHARACTER_ITEMS = 3
+ENEMY_ITEMS = 4
+SHOPS = 5
+CHESTS = 6
+MONSTERS = 7
+ENCOUNTERS = 8
+GUILD_MONSTERS = 9
+HP_TABLE = 10
+MUTANT_RACE = 11
+MEAT = 12
+PATCH = 13
+
+# shop data, stored in separate index-linked lists
+equipment_shop_addrs = [0x17d38, 0x17d4c, 0x17d60, 0x17d74, 0x17d88, 0x17d9c, 0x17db0, 0x17dc4, 0x17dd8, 0x17dec, 0x17e00, 0x17d7e, 0x17dba]
+shop_min_costs = [12, 12, 80, 100, 500, 500, 2060, 4000, 5000, 24, 8000, 500, 500]
+shop_max_costs = [500, 1100, 1000, 2500, 9880, 10712, 10712, 32000, 100000, 500, 100000, 15100, 50000]
+shop_contains_battle_sword = [False, False, True, True, False, False, False, False, False, False, False, False, False]
+
+# chest data, stored in separate index-linked lists
+# (includes non-story items awarded during speech, like REVENGE and N.BOMB)
+chest_addrs = [0xa404, 0xa429, 0xa44e, 0xa47c, 0xa4bf, 0xa4c8, 0xa4d1, 0xa4da, 0xa4e3, 0xa4ec, 0xa4f3, \
+         0xa4fa, 0xa501, 0xa513, 0xa53b, 0xa544, 0xa5d7, 0xa5de, 0xa5e5, 0xa8c0, 0xa8c7, 0xa8ce, \
+         0xa9f4, 0xa9fb, 0xaa02, 0xab0f, 0xab16, 0xab1d, 0xab24, 0xab2b, 0xab32, 0xae1d, 0xae26, \
+         0xae2f, 0xae38, 0xaf59, 0xaf62, 0xaf6b, 0xa51c, 0xa50a, \
+         0x165BB, 0x168B6, 0x17710, 0x16492, 0x16322]
+chest_item_values = [30000, 10000, 200000, 10000, 80, 800, 3800, 4000, 6000, 200, 15000, 10000, 32000, \
+               8000, 50000, 50000, 10000, 10000, 50, 50, 300, 40, 1000, 2500, 800, 200, 10000, \
+               15000, 5000, 5000, 10480, 5000, 200, 23200, 15000, 100000, 200, 10000, 8000, 5000, \
+               200, 100000, 20000, 100000, 2000]
+               
+weapon_types = [0x06, 0x08, 0x07, 0x0B, 0x0C, 18, 17, 19, 20, 26, 34, 5, 9, 13, 14, 15, 16, 21, 22, 23, 3, 4, 27, 28, 29]
+
+armor_flags = [0x04, 0x08, 0x10, 0x20]
+
+story_items = [0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1c, 0x1d, 0x1e, 0x1f, 0x7e, 0x7f]
+
+def RandomizeFFLRomBytes(filebytes, monstercsvpath, seed, options):
 
     encounter_meat_levels = ReadAllEncounterCharacterMeatLevels(filebytes)
     character_abils = ReadAllCharacterAbilities(filebytes)
     original_item_details = [ReadItemToDict(filebytes, idx) for idx in range(0x00, 0xff)]
 
-    RandomizeMutantAbilityLearnList(filebytes)
+    if options[MUTANT_ABILITIES]:
+        RandomizeMutantAbilityLearnList(filebytes)
 
-    RandomizeArmor(filebytes)
-    RandomizeCombatItems(filebytes)
+    if options[ARMOR]:
+        RandomizeArmor(filebytes)
+        
+    if options[COMBAT_ITEMS]:
+        RandomizeCombatItems(filebytes)
     
-    RewriteHumanAndMutantItems(filebytes, character_abils)
-    RewriteNonMonsterEnemyItems(filebytes, character_abils, original_item_details)
+    if options[CHARACTER_ITEMS]:
+        RewriteHumanAndMutantItems(filebytes, character_abils)
+        
+    if options[ENEMY_ITEMS]:
+        RewriteNonMonsterEnemyItems(filebytes, character_abils, original_item_details)
 
-    RandomizeEquipmentShops(filebytes)
-    RandomizeChests(filebytes)
+    if options[SHOPS] or options[CHESTS]:
+        # Try to get the lowest possible number of unused equipment items,
+        # i.e. those that doesn't appear in any shop or chest
+        best_filebytes = list(filebytes)
+        best_score = 99999
+        attempts = 0
+        max_attempts = 500
+        while attempts < max_attempts:
+            attempts += 1
+            if options[SHOPS]:
+                RandomizeEquipmentShops(filebytes)
+            if options[CHESTS]:
+                RandomizeChests(filebytes)
+            num_unused = len(GetUnusedEquipment(filebytes))
+            # print("attempt", attempts, "score", num_unused)
+            if num_unused < best_score:
+                best_score = num_unused
+                best_filebytes = list(filebytes)
+                # print("new best!")
+            if num_unused <= 6: # 6 seems to be the best we're currently likely to get within a reasonable time
+                break
+        for i in range(0, len(filebytes)):
+            filebytes[i] = best_filebytes[i]
 
-    RandomizeMonsters(filebytes, character_abils, monstercsvpath)
+    if options[MONSTERS]:
+        RandomizeMonsters(filebytes, character_abils, monstercsvpath)
     
     WriteAllCharacterAbilities(filebytes, character_abils)
 
-    for encounter_id in range(0, 0x80):
-        RandomizeEncounterMonstersByMeatLevel(filebytes, encounter_id, encounter_meat_levels[encounter_id])
+    if options[ENCOUNTERS]:
+        for encounter_id in range(0, 0x80):
+            RandomizeEncounterMonstersByMeatLevel(filebytes, encounter_id, encounter_meat_levels[encounter_id])
 
-    RandomizeGuildMonsters(filebytes)
-    RandomizeHPTable(filebytes)
-    ReplaceMutantRace(filebytes)
-    RandomizeMeatTransformationTable(filebytes)
-    RandomizeMeatResultLists(filebytes)
+    if options[GUILD_MONSTERS]:
+        RandomizeGuildMonsters(filebytes)
+        
+    if options[HP_TABLE]:
+        RandomizeHPTable(filebytes)
+        
+    if options[MUTANT_RACE]:
+        ReplaceMutantRace(filebytes)
+        
+    if options[MEAT]:
+        RandomizeMeatTransformationTable(filebytes)
+        RandomizeMeatResultLists(filebytes)
     
     WriteSeedTextToTitleScreen(filebytes, seed)
 
@@ -49,8 +126,8 @@ def RandomizeMutantAbilityLearnList(filebytes):
     while len(ability_ids) < 31:
         abil_pick = random.choice(remaining_ability_ids)
         abil_type = ReadItemType(filebytes, abil_pick)
-        # Don't pick abilities of type Strike S (0x06) or Strike A (0x0b)
-        if not (abil_type == 0x06) and not (abil_type == 0x0b):
+        # Don't pick abilities of type Strike S (0x06) or Strike A (0x0b) or Steal (0x24)
+        if not (abil_type in [0x06, 0x0b, 0x24]):
             ability_ids.append(abil_pick)
             remaining_ability_ids.remove(abil_pick)
 
@@ -123,18 +200,12 @@ def RandomizeByteWithinMultipliers(filebytes, idx, min_mult, max_mult):
 
 def RandomizeEquipmentShops(filebytes):
 
-    min_costs = [12, 12, 80, 100, 500, 500, 2060, 4000, 5000, 24, 8000, 500, 500]
-    max_costs = [500, 1100, 1000, 2500, 9880, 10712, 10712, 32000, 100000, 500, 100000, 15100, 50000]
-    shop_contains_battle_sword = [False, False, True, True, False, False, False, False, False, False, False, False, False]
-    shop_addrs = [0x17d38, 0x17d4c, 0x17d60, 0x17d74, 0x17d88, 0x17d9c, 0x17db0, 0x17dc4, 0x17dd8, 0x17dec, 0x17e00, 0x17d7e, 0x17dba]
+    for i in range(0, len(shop_min_costs)):
 
+        min_cost = shop_min_costs[i]
+        max_cost = shop_max_costs[i] * 1.2
 
-    for i in range(0, len(min_costs)):
-
-        min_cost = min_costs[i]
-        max_cost = max_costs[i] * 1.2
-
-        shop_start_idx = shop_addrs[i]
+        shop_start_idx = equipment_shop_addrs[i]
 
         # Need to be able to buy battle sword to advance the story.
         # For now, keep battle sword in any shops that contain it
@@ -336,6 +407,7 @@ def WriteAllCharacterAbilities(filebytes, character_abilities):
             abil_idx_offset += 1
     # write final abil offset
     WriteCharacterAbilOffset(filebytes, 0xc8, abil_idx_offset)
+    return
 
 def ReadGPCost(filebytes, startidx):
 
@@ -963,26 +1035,19 @@ def RandomizeChests(filebytes):
     # Pick a random item for each chest (except chests with story items)
     # which is between 75% and 125% of the value of the original item,
     # or (20% chance) between 200% and 300% of the value
-    addrs = [0xa404, 0xa429, 0xa44e, 0xa47c, 0xa4bf, 0xa4c8, 0xa4d1, 0xa4da, 0xa4e3, 0xa4ec, 0xa4f3, \
-             0xa4fa, 0xa501, 0xa513, 0xa53b, 0xa544, 0xa5d7, 0xa5de, 0xa5e5, 0xa8c0, 0xa8c7, 0xa8ce, \
-             0xa9f4, 0xa9fb, 0xaa02, 0xab0f, 0xab16, 0xab1d, 0xab24, 0xab2b, 0xab32, 0xae1d, 0xae26, \
-             0xae2f, 0xae38, 0xaf59, 0xaf62, 0xaf6b, 0xa51c, 0xa50a]
-    item_values = [30000, 10000, 200000, 10000, 80, 800, 3800, 4000, 6000, 200, 15000, 10000, 32000, \
-                   8000, 50000, 50000, 10000, 10000, 50, 50, 300, 40, 1000, 2500, 800, 200, 10000, \
-                   15000, 5000, 5000, 10480, 5000, 200, 23200, 15000, 100000, 200, 10000, 8000, 5000]
-    for i in range(0, len(addrs)):
+    for i in range(0, len(chest_addrs)):
         pick = 0xff
         r = random.randrange(0x80)
         valid = False
-        min_cost = item_values[i] * 0.75
-        max_cost = item_values[i] * 1.25
+        min_cost = chest_item_values[i] * 0.75
+        max_cost = chest_item_values[i] * 1.25
         if random.randrange(0, 10) < 2:
-            min_cost = item_values[i] * 2.0
-            max_cost = item_values[i] * 3.0
+            min_cost = chest_item_values[i] * 2.0
+            max_cost = chest_item_values[i] * 3.0
         for item_offset in range(0, 0x80):
             pick = (r + item_offset) % 0x80
             # exclude story items
-            valid = not pick in [0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1c, 0x1d, 0x1e, 0x1f, 0x7e, 0x7f]
+            valid = not pick in story_items
             if valid:
                 pick_cost = ReadItemCost(filebytes, pick)
                 valid = ((pick_cost >= min_cost) and (pick_cost <= max_cost))
@@ -991,8 +1056,8 @@ def RandomizeChests(filebytes):
         # If no items were found in the target price range, pick a random item (except story items)
         while (not valid):
             pick = random.randrange(0, 0x80)
-            valid = not pick in [0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1c, 0x1d, 0x1e, 0x1f, 0x7e, 0x7f]
-        addr = addrs[i]
+            valid = not pick in story_items
+        addr = chest_addrs[i]
         # print("Replacing", ReadItemName(filebytes, filebytes[addr]), "with", ReadItemName(filebytes, pick))
         filebytes[addr] = pick
     return
@@ -1300,10 +1365,17 @@ def RewriteHumanAndMutantItems(filebytes, abils):
         wpn = TryFindItemWithTypeInCostRange(filebytes, 6, min_cost, max_cost) # Strike (S)
         if wpn < 0:
             wpn = TryFindItemWithTypeInCostRange(filebytes, 17, min_cost, max_cost) # Projectile (S)
+        if wpn < 0:
+            wpn = TryFindItemWithTypeInCostRange(filebytes, 20, min_cost, max_cost) # Ordnance
         s_weapons.append(wpn)
+        
         wpn = TryFindItemWithTypeInCostRange(filebytes, 11, min_cost, max_cost) # Strike (A)
         if wpn < 0:
             wpn = TryFindItemWithTypeInCostRange(filebytes, 18, min_cost, max_cost) # Projectile (A)
+        if wpn < 0:
+            wpn = TryFindItemWithTypeInCostRange(filebytes, 19, min_cost, max_cost) # Whip
+        if wpn < 0:
+            wpn = TryFindItemWithTypeInCostRange(filebytes, 20, min_cost, max_cost) # Ordnance
         a_weapons.append(wpn)
 
     for wpns in [s_weapons, a_weapons]:
@@ -1349,7 +1421,6 @@ def TryFindItemWithTypeInCostRange(filebytes, abiltype, mincost, maxcost):
     return -1
     
 def RandomizeArmor(filebytes):
-    armor_flags = [0x04, 0x08, 0x10, 0x20]
     new_items = []
     GenerateHelms(new_items)
     GenerateArmors(new_items)
@@ -1359,11 +1430,7 @@ def RandomizeArmor(filebytes):
     for idx in range(0x00, 0x80):
         if idx in [0x11, 0x12, 0x13]: # KING items
             continue
-        tp = ReadItemType(filebytes, idx)
-        if tp != 0:
-            continue
-        flagsA = ReadItemFlagsA(filebytes, idx)
-        if not GetAnyFlagSet(flagsA, armor_flags):
+        if not GetItemIsArmor(filebytes, idx):
             continue
         if IsAbilUsedByEnemies(filebytes, idx):
             continue
@@ -1573,7 +1640,6 @@ def RandomizeCombatItems(filebytes):
     GenerateOrdnances(new_items, 0.3)
     GenerateAttackSpells(new_items, 0.4)
     old_items = []
-    weapon_types = [0x06, 0x08, 0x07, 0x0B, 0x0C, 18, 17, 19, 20, 26, 34, 5, 9, 13, 14, 15, 16, 21, 22, 23, 3, 4, 27, 28, 29]
     for idx in range(0x00, 0x80):
         if idx in [0x11, 0x12, 0x13, 0x23]: # KING items, BATTLE sword
             continue
@@ -1630,6 +1696,15 @@ def RandomizeCombatItems(filebytes):
             del(replacement_items[replacement_item_idx])
         else:
             raise Exception("Failed to replace item!")
+            
+    # Rewrite names of equipment that wasn't replaced to fit our naming scheme
+    if ReadItemName(filebytes, 0x23) == "$BATTLE":
+        WriteItemName(filebytes, 0x23, "$S5")
+    if ReadItemName(filebytes, 0x2b) == "$ICE   ":
+        WriteItemName(filebytes, 0x2b, "$S10ICE")
+    if (ReadItemName(filebytes, 0x46) == "BALKAN ") or (ReadItemName(filebytes, 0x46) == "VULCAN "):
+        WriteItemName(filebytes, 0x46, "O200")
+    
     return
     
 def GenerateStrikeAWeapons(new_items, weight_multiplier):
@@ -1840,15 +1915,14 @@ def RewriteNonMonsterEnemyItems(filebytes, character_abils, original_item_detail
                     else:
                         # Try to find a replacement
                         original_item_y = original_item_details[abil_id]['Y']
-                        for new_abil_id in range(0x00, 0x80):
-                            new_item_type = ReadItemType(filebytes, new_abil_id)
-                            new_item_x = ReadItemX(filebytes, new_abil_id)
-                            new_item_y = ReadItemY(filebytes, new_abil_id)
-                            if (new_item_type == original_item_type) and (new_item_x == original_item_x) and (new_item_y == original_item_y):
-                                # print("Character", hex(character_idx), "replacing", original_item_details[abil_id]['Name'], "with", ReadItemName(filebytes, new_abil_id))
-                                keep = True
-                                character_abils[character_idx][abil_idx] = new_abil_id
-                                break
+                        x_tolerance = 2
+                        if original_item_type in [17, 18, 19, 20]: # Projectiles, whips, ordnance
+                            x_tolerance = 30
+                        new_item_id = FindClosestItem(filebytes, original_item_type, original_item_x, original_item_y, x_tolerance, 999)
+                        if new_item_id > -1:
+                            # print("Character", hex(character_idx), "replacing", original_item_details[abil_id]['Name'], "with", ReadItemName(filebytes, new_item_id))
+                            keep = True
+                            character_abils[character_idx][abil_idx] = new_item_id
                 if not keep:
                     del(character_abils[character_idx][abil_idx])
         if len(character_abils[character_idx]) == 0:
@@ -1859,6 +1933,67 @@ def RewriteNonMonsterEnemyItems(filebytes, character_abils, original_item_detail
         # print(hex(character_idx), original_race_byte, original_num_abilities)
         filebytes[0x0001aae8 + (9 * character_idx)] = (original_race_byte - (8 * (original_num_abilities - 1))) + (8 * (final_num_abilities - 1))
     return
+    
+def FindClosestItem(filebytes, itm_type, itm_x, itm_y, x_tolerance, y_tolerance):
+    closest_score = 999999999
+    closest_idx = -1
+    for idx in range(0x00, 0x80):
+        new_item_type = ReadItemType(filebytes, idx)
+        new_item_x = ReadItemX(filebytes, idx)
+        new_item_y = ReadItemY(filebytes, idx)
+        if new_item_type == itm_type:
+            x_diff = abs(new_item_x - itm_x)
+            y_diff = abs(new_item_y - itm_y)
+            if (x_diff <= x_tolerance) and (y_diff <= y_tolerance):
+                score = x_diff + y_diff
+                if score < closest_score:
+                    closest_score = score
+                    closest_idx = idx
+    return closest_idx
+    
+def GetUnusedEquipment(filebytes):
+    unused_items = []
+    for idx in range(0x00, 0x80):
+        used = False
+        if idx in story_items:
+            used = True
+        if IsAbilUsedByEnemies(filebytes, idx):
+            used = True
+        
+        skip_item = True
+        if GetItemIsArmor(filebytes, idx):
+            skip_item = False
+        if skip_item:
+            tp = ReadItemType(filebytes, idx)
+            if tp in weapon_types:
+                skip_item = False
+        if skip_item:
+            continue
+        
+        if not used:
+            for chest_addr in chest_addrs:
+                if filebytes[chest_addr] == idx:
+                    used = True
+                    break
+        
+        if not used:
+            for shop_addr in equipment_shop_addrs:
+                for i in range(0, 10):
+                    if filebytes[shop_addr + i] == idx:
+                        used = True
+                        break
+        if not used:
+            unused_items.append(idx)
+    return unused_items
+    
+def GetItemIsArmor(filebytes, idx):
+    tp = ReadItemType(filebytes, idx)
+    if tp != 0:
+        return False
+    flagsA = ReadItemFlagsA(filebytes, idx)
+    if not GetAnyFlagSet(flagsA, armor_flags):
+        return False
+    return True
     
 def ApplyIPSPatch(filebytes, patchbytes):
     patch_offset = 0
@@ -1902,26 +2037,33 @@ def ApplyIPSPatch(filebytes, patchbytes):
     
     return True
     
-def FFLRandomize(seed, rompath, monstercsvpath):
+def FFLRandomize(seed, rompath, monstercsvpath, options):
 
-    print("seed: ", seed)
+    print("Seed: ", seed)
     random.seed(seed)
+    
+    print("Options:")
+    for option in options.keys():
+        if not options[option]:
+            print(command_line_switches[option])
 
     # read bytes from input file
     inf = open(rompath, 'rb')
     filebytes = bytearray(inf.read())
     inf.close()
     
-    # read bytes from IPS patch file
-    q = pathlib.Path(rompath).with_name("ffltrt16.ips")
-    ipsf = open(q, "rb")
-    ipsfilebytes = bytearray(ipsf.read())
-    ipsf.close()
+    if options[PATCH]:
+        print("Patching...")
+        # read bytes from IPS patch file
+        q = pathlib.Path(rompath).with_name("ffltrt16.ips")
+        ipsf = open(q, "rb")
+        ipsfilebytes = bytearray(ipsf.read())
+        ipsf.close()
     
-    # apply patch
-    success = ApplyIPSPatch(filebytes, ipsfilebytes)
-    if not success:
-        raise Exception("Failed to apply IPS patch. It should be in the same directory as the rom, named \"ffltrt16.ips\"")
+        # apply patch
+        success = ApplyIPSPatch(filebytes, ipsfilebytes)
+        if not success:
+            raise Exception("Failed to apply IPS patch. It should be in the same directory as the rom, named \"ffltrt16.ips\"")
 
     ##########################
 
@@ -1932,8 +2074,9 @@ def FFLRandomize(seed, rompath, monstercsvpath):
     
     ##########################
 
-    RandomizeFFLRomBytes(filebytes, monstercsvpath, seed)
-
+    print("Randomizing...")
+    RandomizeFFLRomBytes(filebytes, monstercsvpath, seed, options)
+    
     # construct output filename
     q = pathlib.Path(rompath).with_name("FFL_" + str(seed) + ".gb")
     print("Writing:", q)
@@ -1944,6 +2087,25 @@ def FFLRandomize(seed, rompath, monstercsvpath):
     outf.close()
     
     return
+    
+def PromptForOptions(options):
+
+    prompt_strings = { MUTANT_ABILITIES:"Randomize mutant abilities?", \
+        ARMOR:"Randomize armor?", COMBAT_ITEMS:"Randomize combat items?", \
+        CHARACTER_ITEMS:"Randomize character items?", ENEMY_ITEMS:"Randomize enemy items?", \
+        SHOPS:"Randomize shops?", CHESTS:"Randomize chests?", MONSTERS:"Randomize monsters?", \
+        ENCOUNTERS:"Randomize encounters?", GUILD_MONSTERS:"Randomize guild monsters?", \
+        HP_TABLE:"Randomize HP table?", MUTANT_RACE:"Randomize mutant race?", \
+        MEAT:"Randomize meat transformations?", PATCH:"Apply patch before randomization?", \
+        }
+        
+    for switch in prompt_strings.keys():
+        options[switch]=True
+        response = input(prompt_strings[switch] + " Default Yes, type N for No:")
+        if response == "N":
+            options[switch]=False
+
+    return
 
 print("FFL Randomizer version", VERSION)
 
@@ -1951,10 +2113,27 @@ rompath = ""
 monstercsvpath = ""
 seed = 0
 
-if len(sys.argv) == 4:
+options = { MUTANT_ABILITIES:True, ARMOR:True, COMBAT_ITEMS:True, CHARACTER_ITEMS:True, ENEMY_ITEMS:True, \
+    SHOPS:True, CHESTS:True, MONSTERS:True, ENCOUNTERS:True, GUILD_MONSTERS:True, HP_TABLE:True,
+    MUTANT_RACE:True, MEAT:True, PATCH:True }
+    
+command_line_switches = { MUTANT_ABILITIES:"nomutantabilities", ARMOR:"noarmor", COMBAT_ITEMS:"nocombatitems", \
+    CHARACTER_ITEMS:"nocharacteritems", ENEMY_ITEMS:"noenemyitems", \
+    SHOPS:"noshops", CHESTS:"nochests", MONSTERS:"nomonsters", ENCOUNTERS:"noencounters", \
+    GUILD_MONSTERS:"noguildmonsters", HP_TABLE:"nohptable", MUTANT_RACE:"nomutantrace", \
+    MEAT:"nomeat", PATCH:"nopatch" }
+
+if len(sys.argv) >= 4:
     rompath = sys.argv[1]
     monstercsvpath = sys.argv[2]
     seed = int(sys.argv[3])
+    switch_keys = list(command_line_switches.keys())
+    switch_vals = list(command_line_switches.values())
+    for argidx in range(4, len(sys.argv)):
+        if sys.argv[argidx] in switch_vals:
+            switchidx = switch_vals.index(sys.argv[argidx])
+            option = switch_keys[switchidx]
+            options[option] = False
 else:
     rompath = input("Enter path to rom:")
     rompath = rompath.strip("\"")
@@ -1968,5 +2147,8 @@ else:
         seed = ((seed & 0xff000000) >> 24) + ((seed & 0x00ff0000) >> 8) + ((seed & 0x0000ff00) << 8) + ((seed & 0x000000ff) << 24)
     else:
         seed = int(seed_str)
+    change_options = input("Change options? Default No, type Y for Yes:")
+    if change_options == "Y":
+        PromptForOptions(options)
 
-FFLRandomize(seed, rompath, monstercsvpath)
+FFLRandomize(seed, rompath, monstercsvpath, options)

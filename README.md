@@ -5,11 +5,13 @@ Windows binary here: https://github.com/eclipseyy/FFLRandomizer/raw/main/randomi
 
 Written in Python 3.8 on Windows. I haven't tested other platforms. There isn't anything Windows-specific in there - pathlib is used for paths, etc - so it might work. Could have endianness issues. The Windows binary was created using pyinstaller.
 
-Copy the ips patch to the same directory as your FFL ROM.
+Copy the ips patch to the same directory as your FFL ROM. The patch is Tower Reversed's latest patch. It's automatically applied before randomization. I recommend letting this happen (which is the default) but you can disable it if you want.
 
 You have to supply the path to the FFL rom and the path to the monster CSV. You can edit the monster CSV first if you want. You can optionally supply the seed value to use for the randomization. The randomizer generates one new rom file per run.
 
-Silent mode: randomize_ffl rompath monstercsvpath seed
+Silent mode: randomize_ffl rompath monstercsvpath seed \[options\]<br/>
+Valid options are "nomutantabilities", "noarmor", "nocombatitems", "nocharacteritems", "noenemyitems", "noshops", "nochests", "nomonsters", "noencounters", "noguildmonsters", "nohptable", "nomutantrace", "nomeat", "nopatch". You can specify multiple options, separated by spaces.<br/>
+Some combinations of options might unbalance the game. For example, if you use "noencounters" without "nomonsters", some encounters will probably have inappropriately high level monsters, and be difficult to win.
 
 Currently randomized:
 - monsters, picked from CSV file
@@ -27,7 +29,6 @@ Gameplay should hopefully be reasonably balanced between seeds. Let me know if y
 If you want to cheat and see what's in a randomized rom, use Tower Reversed's fledermaus utility.
 
 Future:
-- switches to control which features are randomized
 - randomize non-monster enemies
 - improve monster CSV
 - etc
@@ -64,7 +65,8 @@ Contact: eclipseyy@gmx.com. PLEASE email me with your feedback, suggestions, etc
 
 ## Version history
 
-v0.004 - bug fix
+v0.005 - options. Randomize shops and chests multiple times to find the lowest number of unused items in the game. Bug fixes, tweaks and improvements.<br/>
+v0.004 - bug fix<br/>
 v0.003 - randomization of other combat items. Bug fixes and balancing tweaks. Undid transforming into non-monster enemies as in practice it's usually unwanted.<br/>
 v0.002 - added armor and melee weapon randomization. Greatly improved meat transformation (thanks Tower Reversed). Monsters eating meat now sometimes transform into non-monsters! Automatically apply TR Tweaks patch. Many tweaks.<br/>
 v0.001 - initial<br/>
