@@ -1,6 +1,8 @@
 # FFLRandomizer
 Randomizer for Gameboy game The Final Fantasy Legend (1989).
 
+Familiarity with the vanilla game is highly recommended, as is often the case with randomizers.
+
 Windows binary here: https://github.com/eclipseyy/FFLRandomizer/raw/main/randomize_ffl.zip
 
 Written in Python 3.8 on Windows. I haven't tested other platforms. There isn't anything Windows-specific in there - pathlib is used for paths, etc - so it might work. Could have endianness issues. The Windows binary was created using pyinstaller.
@@ -23,7 +25,7 @@ Currently randomized:
 - mutant learnable abilities
 - armor
 - combat items
-- connections between rooms in the tower
+- connections between rooms in the tower - you will likely visit the floors out of numerical order
 
 Gameplay should hopefully be reasonably balanced between seeds. Let me know if you find a very difficult or very easy seed. The difficulty might not be even within a particular randomized rom, but that's part of the fun. Item costs should be fair. If you find items which seem very cheap or expensive, let me know.
 
