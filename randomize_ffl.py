@@ -4,7 +4,7 @@ import pathlib
 import csv
 import sys
 
-VERSION = "0.006"
+VERSION = "0.007"
 
 # contact: eclipseyy@gmx.com
 
@@ -24,6 +24,8 @@ MUTANT_RACE = 11
 MEAT = 12
 PATCH = 13
 TOWER = 14
+DUNGEONS = 15
+SKYSCRAPER = 16
 
 # shop data, stored in separate index-linked lists
 equipment_shop_addrs = [0x17d38, 0x17d4c, 0x17d60, 0x17d74, 0x17d88, 0x17d9c, 0x17db0, 0x17dc4, 0x17dd8, 0x17dec, 0x17e00, 0x17d7e, 0x17dba, 0x17de2]
@@ -122,6 +124,15 @@ def RandomizeFFLRomBytes(filebytes, monstercsvpath, seed, options):
         RandomizeSecondTowerSection(filebytes)
         RandomizeThirdTowerSection(filebytes)
         RandomizeFourthTowerSection(filebytes)
+        
+    if options[DUNGEONS]:
+        RandomizeBanditCaveRooms(filebytes)
+        RandomizeOceanCaves(filebytes)
+        RandomizeDragonPalaceRooms(filebytes)
+        RandomizeUnderseaCave(filebytes)
+        
+    if options[SKYSCRAPER]:
+        RandomizeRuinsSkyscraper(filebytes)
     
     WriteSeedTextToTitleScreen(filebytes, seed)
 
@@ -226,12 +237,15 @@ def RandomizeEquipmentShops(filebytes):
                 new_shop_items.append(0x23)
             
         while len(new_shop_items) < (10 - shop_equipment_start_idx[i]):
-            # eligible items for shops are 0x02, 0x1b, and 0x20-0x79 inclusive
-            pick = random.randrange(0x20, 0x7c)
+            # eligible items for shops are 0x0b, 0x02, 0x1b, and 0x20-0x79 inclusive
+            # 0x0b is DOOR - I'm including it because it might not appear in a chest
+            pick = random.randrange(0x20, 0x7d)
             if pick == 0x7a:
                 pick = 0x02
             if pick == 0x7b:
                 pick = 0x1b
+            if pick == 0x7c:
+                pick = 0x0b
 
             if pick in new_shop_items:
                 continue
@@ -2010,7 +2024,7 @@ def GetItemIsArmor(filebytes, idx):
     return True
     
 def RandomizeFirstTowerSection(filebytes):
-    first_exit = [0xbb, 0x30, 0x15, 0x0d]
+    first_room = [[0xbb, 0x30, 0x15, 0x0d]]
     remaining_rooms = [[[0x17, 0x02, 0x0a, 0x0d], [0x18, 0x02, 0x13, 0x0a]], \
         [[0x35, 0x03, 0x1d, 0x1a], [0x036, 0x03, 0x0a, 0x0d], [0x037, 0x03, 0x12, 0x1b]], \
         [[0x058, 0x04, 0x14, 0x0d], [0x059, 0x04, 0x1b, 0x1c], [0x05A, 0x04, 0x0c, 0x1d]], \
@@ -2022,11 +2036,11 @@ def RandomizeFirstTowerSection(filebytes):
         [[0x0ea, 0x4B, 0x09, 0x10]] \
         ]
         
-    RandomizeTowerSection(filebytes, first_exit, remaining_rooms)
+    RandomizeTowerSection(filebytes, first_room, remaining_rooms)
     return
     
 def RandomizeSecondTowerSection(filebytes):
-    first_exit = [0x05b, 0x05, 0x19, 0x16]
+    first_room = [[0x05b, 0x05, 0x19, 0x16]]
     remaining_rooms = [[[0x03a, 0x06, 0x13, 0x1d], [0x03b, 0x06, 0x19, 0x14]], \
         [[0x05e, 0x07, 0x09, 0x19], [0x05f, 0x07, 0x13, 0x1c], [0x060, 0x07, 0x13, 0x0d]], \
         [[0x04d, 0x08, 0x1e, 0x19], [0x04e, 0x08, 0x09, 0x18]], \
@@ -2041,11 +2055,11 @@ def RandomizeSecondTowerSection(filebytes):
         [[0x0ec, 0x4d, 0x13, 0x0c]] \
         ]
         
-    RandomizeTowerSection(filebytes, first_exit, remaining_rooms)
+    RandomizeTowerSection(filebytes, first_room, remaining_rooms)
     return
 
 def RandomizeThirdTowerSection(filebytes):
-    first_exit = [0x064, 0x0a, 0x14, 0x0d]
+    first_room = [[0x064, 0x0a, 0x14, 0x0d]]
     
     # These rooms don't include the exits to the flooded/dry worlds on 13f and 14f,
     # because they have multiple exits, including the one-way exit from 14f to 13f
@@ -2066,11 +2080,11 @@ def RandomizeThirdTowerSection(filebytes):
         [[0x0ed, 0x4e, 0x20, 0x10]] \
         ]
         
-    RandomizeTowerSection(filebytes, first_exit, remaining_rooms)
+    RandomizeTowerSection(filebytes, first_room, remaining_rooms)
     return
 
 def RandomizeFourthTowerSection(filebytes):
-    first_exit = [0x076, 0x10, 0x11, 0x16]
+    first_room = [[0x076, 0x10, 0x11, 0x16]]
     
     # These rooms include the connection between the flower world on 21f and the hut,
     # so you might have to go through the hut to continue up the tower!
@@ -2093,20 +2107,21 @@ def RandomizeFourthTowerSection(filebytes):
         [[0x0f9, 0x57, 0x22, 0x26]] \
         ]
         
-    RandomizeTowerSection(filebytes, first_exit, remaining_rooms)
+    RandomizeTowerSection(filebytes, first_room, remaining_rooms)
     return
 
-def RandomizeTowerSection(filebytes, first_exit, remaining_rooms):
+def RandomizeTowerSection(filebytes, first_room, remaining_rooms):
+    
     # Each room is a list of exits, and each exit is a list with four data members, defined as follows:
     # [0] is exit offset
     # [1] is room ID for return
     # [2] is X coordinate for return
     # [3] is Y coordinate for return
     
-    open_exits = [first_exit]
+    open_exits = list(first_room)
     exit_pairs = []
     
-    # First, randomly connect rooms with more than two exits - connect one exit from each room
+    # (1) First, randomly connect rooms with more than two exits - connect one exit from each room
     
     rooms_to_connect = []
     for i in range(len(remaining_rooms) - 1, -1, -1):
@@ -2122,8 +2137,8 @@ def RandomizeTowerSection(filebytes, first_exit, remaining_rooms):
         del(open_exits[open_exit_idx])
         for remaining_exit in room:
             open_exits.append(remaining_exit)
-            
-    # Then randomly connect rooms with one exit
+        
+    # (2) Randomly connect rooms with one exit
     
     rooms_to_connect = []
     for i in range(len(remaining_rooms) - 1, -1, -1):
@@ -2136,11 +2151,36 @@ def RandomizeTowerSection(filebytes, first_exit, remaining_rooms):
         exit_pairs.append([room[0], open_exits[open_exit_idx]])
         del(open_exits[open_exit_idx])
         
+    # Sanity check: the number of open exits should be even
+    if len(open_exits) % 2 != 0:
+        raise Exception("Should be an even number of exits but there are " + str(len(open_exits)))
+        
+    # (3) Randomly connect open exits together, ensuring we don't connect two exits from the same room
+    
+    while len(open_exits) > 0:
+        # Sanity check: the exits should be in different rooms
+        if all(open_exit[1] == open_exits[0][1] for open_exit in open_exits):
+            raise Exception("All remaining exits are in the same room!")
+
+        # Pick two open exits which don't come from the same room (member [1])
+        first_open_exit_idx = random.randrange(0, len(open_exits))
+        second_open_exit_idx = first_open_exit_idx
+        while (second_open_exit_idx == first_open_exit_idx) or (open_exits[first_open_exit_idx][1] == open_exits[second_open_exit_idx][1]):
+            second_open_exit_idx = random.randrange(0, len(open_exits))
+
+        exit_pairs.append([open_exits[first_open_exit_idx], open_exits[second_open_exit_idx]])
+
+        # Remove the exits from the list - the higher index has to be removed first so the lower index will still be correct
+        delete_indices = [first_open_exit_idx, second_open_exit_idx]
+        delete_indices.sort(reverse=True)
+        for delete_index in delete_indices:
+            del(open_exits[delete_index])
+        
     # Sanity check: this should leave no open exits
     if len(open_exits) > 0:
         raise Exception("Should be no open exits but found " + str(len(open_exits)))
         
-    # Finally, randomly insert rooms with two exits between previous connections
+    # (4) Finally, randomly insert rooms with two exits between previous connections
     
     rooms_to_connect = []
     # Sanity check
@@ -2163,18 +2203,126 @@ def RandomizeTowerSection(filebytes, first_exit, remaining_rooms):
         del(exit_pairs[existing_exit_pair_idx])
     
     # Write data
-    for pair in exit_pairs:
-        for i in range(0, 3):
-            # Copy the three bytes from pair[1][1:4] to the offset specified by pair[0][0]
-            filebytes[0x92d0 + (3 * pair[0][0]) + i] = pair[1][i + 1]
-            # Copy the three bytes from pair[0][1:4] to the offset specified by pair[1][0]
-            filebytes[0x92d0 + (3 * pair[1][0]) + i] = pair[0][i + 1]
+    WriteExitPairs(filebytes, exit_pairs)
     
     # for pair in exit_pairs:
     #    print([str(hex(a)) for a in pair[0]], [str(hex(a)) for a in pair[1]])
 
     return
     
+def WriteExitPairs(filebytes, exit_pairs):
+    for pair in exit_pairs:
+        for i in range(0, 3):
+            if pair[0][0] >= 0:
+                # Copy the three bytes from pair[1][1:4] to the offset specified by pair[0][0]
+                filebytes[0x92d0 + (3 * pair[0][0]) + i] = pair[1][i + 1]
+            if pair[1][0] >= 0:
+                # Copy the three bytes from pair[0][1:4] to the offset specified by pair[1][0]
+                filebytes[0x92d0 + (3 * pair[1][0]) + i] = pair[0][i + 1]
+    return
+    
+def RandomizeOceanCaves(filebytes):
+    # Exit pairs for first cave system
+    exit_pairs_1 = [[[0x11d, 0x66, 0x12, 0x30], [0x126, 0x68, 0x07, 0x18]], \
+        [[0x11e, 0x66, 0x12, 0x26], [0x127, 0x68, 0x0d, 0x03]], \
+        [[0x11f, 0x66, 0x17, 0x2a], [0x128, 0x68, 0x1b, 0x03]], \
+        [[0x120, 0x66, 0x19, 0x32], [0x129, 0x68, 0x17, 0x12]] \
+        ]
+    
+    # Exit pairs for second cave system
+    exit_pairs_2 = [[[0x121, 0x66, 0x1c, 0x27], [0x12a, 0x69, 0x08, 0x2f]], \
+        [[0x122, 0x66, 0x1c, 0x1f], [0x12b, 0x69, 0x0b, 0x1e]], \
+        [[0x123, 0x66, 0x23, 0x20], [0x12c, 0x69, 0x1a, 0x17]], \
+        [[0x124, 0x66, 0x1f, 0x28], [0x12d, 0x69, 0x18, 0x2a]]]
+        
+    # Within each of the two caves, any of the four exits can be accessed.
+    # So we can just randomly permute the exit pairs within each cave
+    
+    RandomlyPermuteExitPairs(exit_pairs_1)
+    RandomlyPermuteExitPairs(exit_pairs_2)
+    
+    WriteExitPairs(filebytes, exit_pairs_1)
+    WriteExitPairs(filebytes, exit_pairs_2)
+    
+    return
+    
+def RandomlyPermuteExitPairs(exit_pairs):
+    # print("before", exit_pairs)
+    pair_second = [list(pair[1]) for pair in exit_pairs]
+    random.shuffle(pair_second)
+    for idx in range(0, len(pair_second)):
+        exit_pairs[idx][1] = pair_second[idx]
+    # print("after", exit_pairs)
+    return
+    
+def RandomizeBanditCaveRooms(filebytes):
+    one_way_exits = [[0x10d, 0x62, 0x33, 0x0e], [0x111, 0x61, 0x32, 0x1e]]
+    RandomlyPermuteOneWayExits(one_way_exits)
+    WriteOneWayExits(filebytes, one_way_exits)
+    return
+    
+def RandomizeDragonPalaceRooms(filebytes):
+    one_way_exits = [[0x13f, 0x78, 0x16, 0x06], [0x142, 0x77, 0x21, 0x09], [0x145, 0x76, 0x0f, 0x2e]]
+    RandomlyPermuteOneWayExits(one_way_exits)
+    WriteOneWayExits(filebytes, one_way_exits)
+    return
+    
+def RandomlyPermuteOneWayExits(one_way_exits):
+    exit_addrs = [e[0] for e in one_way_exits]
+    random.shuffle(exit_addrs)
+    for idx in range(0, len(exit_addrs)):
+        one_way_exits[idx][0] = exit_addrs[idx]
+    return
+    
+def WriteOneWayExits(filebytes, one_way_exits):
+    for ext in one_way_exits:
+        addr_offset = ext[0]
+        for i in range(0, 3):
+            filebytes[0x92d0 + (3 * addr_offset) + i] = ext[i + 1]    
+    return
+    
+def RandomizeUnderseaCave(filebytes):
+    exit_pairs = [[[0x136, 0x6f, 0x0d, 0x23], [0x138, 0x70, 0x12, 0x32]], \
+        [[0x137, 0x6f, 0x13, 0x23], [0x13a, 0x71, 0x2e, 0x0f]] \
+        ]
+    RandomlyPermuteExitPairs(exit_pairs)
+    WriteExitPairs(filebytes, exit_pairs)
+    return
+    
+def RandomizeRuinsSkyscraper(filebytes):
+    first_room = [[0x1a7, 0xa6, 0x10, 0xd], [0x1a8, 0xa6, 0x18, 0x0d], [0x1a6, 0xa6, 0x14, 0x1a]]
+
+    remaining_rooms = [[[-1, 0x48, 0x10, 0x18]], \
+        [[-1, 0x9b, 0x10, 0x18]], \
+        [[0x1aa, 0xa7, 0xc, 0xf], [0x1ab, 0xa7, 0x1c, 0x0f], [0x1ad, 0xa7, 0x1c, 0x1e], [0x1ac, 0xa7, 0x0c, 0x1e]], \
+        [[0x1ae, 0xa8, 0x12, 0x0e], [0x1af, 0xa8, 0x19, 0x13], [0x1b0, 0xa8, 0xb, 0x18], [0x1b1, 0xa8, 0x11, 0x13]], \
+        [[0x1b2, 0xa9, 0x3c, 0xf], [0x1b3, 0xa9, 0x2, 0xf]], \
+        [[0x1b4, 0xaa, 0xc, 0xe], [0x1b5, 0xaa, 0x10, 0x13], [0x1b6, 0xaa, 0x12, 0x13], [0x1b7, 0xaa, 0x16, 0x17]], \
+        [[0x1b8, 0xab, 0xd, 0xe], [0x1b9, 0xab, 0x10, 0x14], [0x1ba, 0xab, 0x17, 0x17], [0x1bb, 0xab, 0x14, 0x12]], \
+        [[0x1bd, 0xac, 0xb, 0xe], [0x1bf, 0xac, 0x10, 0x17], [0x1bc, 0xac, 0x11, 0x0e], [0x1be, 0xac, 0x16, 0x0e]], \
+        [[-1, 0xad, 0x10, 0x18]], \
+        [[-1, 0xad, 0x10, 0x18]], \
+        [[-1, 0xad, 0x10, 0x18]], \
+        [[-1, 0xae, 0x10, 0x18]], \
+        [[-1, 0xae, 0x10, 0x18]], \
+        [[-1, 0xae, 0x10, 0x18]], \
+        [[-1, 0xaf, 0x10, 0x18]], \
+        [[-1, 0xaf, 0x10, 0x18]], \
+        [[-1, 0xaf, 0x10, 0x18]], \
+        [[0x1c0, 0xb0, 0xf, 0x11], [0x1c1, 0xb0, 0xf, 0x26]], \
+        [[0x1c2, 0xb1, 0xf, 0x11], [0x1c3, 0xb1, 0xf, 0x26]], \
+        [[0x1c4, 0xb2, 0xf, 0x11], [0x1c5, 0xb2, 0xf, 0x26]], \
+        [[0x1c6, 0xb3, 0xf, 0x11], [0x1c7, 0xb3, 0xf, 0x26]], \
+        [[0x1c8, 0xb4, 0xf, 0x11], [0x1c9, 0xb4, 0xf, 0x26]], \
+        [[0x1ca, 0xb5, 0xe, 0x15], [0x1cb, 0xb5, 0x16, 0xf]], \
+        [[0x1cc, 0xb6, 0x1c, 0x1a]], \
+        [[-1, 0xbd, 0x10, 0x18]] \
+        ]
+        
+    RandomizeTowerSection(filebytes, first_room, remaining_rooms)
+        
+    return
+
 def ApplyIPSPatch(filebytes, patchbytes):
     patch_offset = 0
     patch_str = ""
@@ -2277,7 +2425,7 @@ def PromptForOptions(options):
         ENCOUNTERS:"Randomize encounters?", GUILD_MONSTERS:"Randomize guild monsters?", \
         HP_TABLE:"Randomize HP table?", MUTANT_RACE:"Randomize mutant race?", \
         MEAT:"Randomize meat transformations?", PATCH:"Apply patch before randomization?", \
-        TOWER:"Randomize tower exits?" \
+        TOWER:"Randomize tower exits?", DUNGEONS:"Randomize dungeon exits?", SKYSCRAPER:"Randomize skyscraper exits?" \
         }
         
     for switch in prompt_strings.keys():
@@ -2296,13 +2444,13 @@ seed = 0
 
 options = { MUTANT_ABILITIES:True, ARMOR:True, COMBAT_ITEMS:True, CHARACTER_ITEMS:True, ENEMY_ITEMS:True, \
     SHOPS:True, CHESTS:True, MONSTERS:True, ENCOUNTERS:True, GUILD_MONSTERS:True, HP_TABLE:True,
-    MUTANT_RACE:True, MEAT:True, PATCH:True, TOWER:True }
+    MUTANT_RACE:True, MEAT:True, PATCH:True, TOWER:True, DUNGEONS:True, SKYSCRAPER:True }
     
 command_line_switches = { MUTANT_ABILITIES:"nomutantabilities", ARMOR:"noarmor", COMBAT_ITEMS:"nocombatitems", \
     CHARACTER_ITEMS:"nocharacteritems", ENEMY_ITEMS:"noenemyitems", \
     SHOPS:"noshops", CHESTS:"nochests", MONSTERS:"nomonsters", ENCOUNTERS:"noencounters", \
     GUILD_MONSTERS:"noguildmonsters", HP_TABLE:"nohptable", MUTANT_RACE:"nomutantrace", \
-    MEAT:"nomeat", PATCH:"nopatch", TOWER:"notower" }
+    MEAT:"nomeat", PATCH:"nopatch", TOWER:"notower", DUNGEONS:"nodungeons", SKYSCRAPER:"noskyscraper" }
 
 if len(sys.argv) >= 4:
     rompath = sys.argv[1]
