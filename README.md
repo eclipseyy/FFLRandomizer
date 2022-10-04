@@ -1,19 +1,22 @@
 # FFLRandomizer
 Randomizer for Gameboy game The Final Fantasy Legend (1989).
 
-Familiarity with the vanilla game is highly recommended, as is often the case with randomizers.
+Familiarity with the vanilla game is highly recommended.
 
 Windows binary here: https://github.com/eclipseyy/FFLRandomizer/raw/main/randomize_ffl.zip
 
 Written in Python 3.8 on Windows. I haven't tested other platforms. There isn't anything Windows-specific in there - pathlib is used for paths, etc - so it might work. Could have endianness issues. The Windows binary was created using pyinstaller.
+
+## Running the randomizer
 
 Copy the ips patch to the same directory as your FFL ROM. The patch is Tower Reversed's latest patch. It's automatically applied before randomization. I recommend letting this happen (which is the default) but you can disable it if you want.
 
 You have to supply the path to the FFL rom and the path to the monster CSV. You can edit the monster CSV first if you want. You can optionally supply the seed value to use for the randomization. The randomizer generates one new rom file per run.
 
 Silent mode: randomize_ffl rompath monstercsvpath seed \[options\]<br/>
-Valid options are "nomutantabilities", "noarmor", "nocombatitems", "nocharacteritems", "noenemyitems", "noshops", "nochests", "nomonsters", "noencounters", "noguildmonsters", "nohptable", "nomutantrace", "nomeat", "nopatch", "notower", "nodungeons", "noskyscraper". You can specify multiple options, separated by spaces.<br/>
+Valid options are nomutantabilities, noarmor, nocombatitems, nocharacteritems, noenemyitems, noshops, nochests, nomonsters, noencounters, noguildmonsters, nohptable, nomutantrace, nomeat, nopatch, notower, nodungeons, noskyscraper, transformation_level x, encounter_level x, monster_gold x, gold_table_multiplier x, harder_encounters. You can specify multiple options, separated by spaces.<br/>
 Some combinations of options might unbalance the game. For example, if you use "noencounters" without "nomonsters", some encounters will probably have inappropriately high level monsters, and be difficult to win.
+For a tougher challenge, the harder_encounters option populates encounters with higher level monsters. Meat transformations and gold combat rewards are adjusted to compensate. harder_encounters is equivalent to transformation_level -1 encounter_level 1 monster_gold -1 gold_table_multiplier 0.7.<br/>
 
 Currently randomized:
 - monsters, picked from CSV file
@@ -32,12 +35,6 @@ Currently randomized:
 Gameplay should hopefully be reasonably balanced between seeds. Let me know if you find a very difficult or very easy seed. The difficulty might not be even within a particular randomized rom, but that's part of the fun. Item costs should be fair. If you find items which seem very cheap or expensive, let me know.
 
 If you want to cheat and see what's in a randomized rom, use Tower Reversed's fledermaus utility.
-
-Future:
-- randomize connections between rooms in other places
-- randomize non-monster enemies?
-- improve monster CSV
-- etc
 
 ## Combat items
 
@@ -71,6 +68,7 @@ Contact: eclipseyy@gmx.com. PLEASE email me with your feedback, suggestions, etc
 
 ## Version history
 
+v0.008 - harder_encounters option. Tweak monster CSV a bit.
 v0.007 - randomize dungeon and skyscraper exits<br/>
 v0.006 - randomize connections between rooms in the tower. Tweaks, bug fixes.<br/>
 v0.005 - options. Randomize shops and chests multiple times to find the lowest number of unused items in the game. Bug fixes, tweaks and improvements.<br/>

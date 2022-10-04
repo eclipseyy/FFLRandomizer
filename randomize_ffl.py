@@ -4,11 +4,11 @@ import pathlib
 import csv
 import sys
 
-VERSION = "0.007"
+VERSION = "0.008"
 
 # contact: eclipseyy@gmx.com
 
-# option definitions
+# option definitions (bools)
 MUTANT_ABILITIES = 0
 ARMOR = 1
 COMBAT_ITEMS = 2
@@ -26,6 +26,12 @@ PATCH = 13
 TOWER = 14
 DUNGEONS = 15
 SKYSCRAPER = 16
+
+# option definitions (numbers)
+TRANSFORMATION_LEVEL_ADJUST = 101
+ENCOUNTER_LEVEL_ADJUST = 102
+MONSTER_GOLD_OFFSET_ADJUST = 103
+GOLD_TABLE_AMOUNT_MULTIPLIER = 104
 
 # shop data, stored in separate index-linked lists
 equipment_shop_addrs = [0x17d38, 0x17d4c, 0x17d60, 0x17d74, 0x17d88, 0x17d9c, 0x17db0, 0x17dc4, 0x17dd8, 0x17dec, 0x17e00, 0x17d7e, 0x17dba, 0x17de2]
@@ -52,7 +58,7 @@ armor_flags = [0x04, 0x08, 0x10, 0x20]
 
 story_items = [0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1c, 0x1d, 0x1e, 0x1f, 0x7e, 0x7f]
 
-def RandomizeFFLRomBytes(filebytes, monstercsvpath, seed, options):
+def RandomizeFFLRomBytes(filebytes, monstercsvpath, seed, options, options_numbers):
 
     encounter_meat_levels = ReadAllEncounterCharacterMeatLevels(filebytes)
     character_abils = ReadAllCharacterAbilities(filebytes)
@@ -104,7 +110,7 @@ def RandomizeFFLRomBytes(filebytes, monstercsvpath, seed, options):
 
     if options[ENCOUNTERS]:
         for encounter_id in range(0, 0x80):
-            RandomizeEncounterMonstersByMeatLevel(filebytes, encounter_id, encounter_meat_levels[encounter_id])
+            RandomizeEncounterMonstersByMeatLevel(filebytes, encounter_id, encounter_meat_levels[encounter_id], options_numbers[ENCOUNTER_LEVEL_ADJUST])
 
     if options[GUILD_MONSTERS]:
         RandomizeGuildMonsters(filebytes)
@@ -117,7 +123,7 @@ def RandomizeFFLRomBytes(filebytes, monstercsvpath, seed, options):
         
     if options[MEAT]:
         RandomizeMeatTransformationTable(filebytes)
-        RandomizeMeatResultLists(filebytes)
+        RandomizeMeatResultLists(filebytes, options_numbers[TRANSFORMATION_LEVEL_ADJUST])
 
     if options[TOWER]:
         RandomizeFirstTowerSection(filebytes)
@@ -133,7 +139,13 @@ def RandomizeFFLRomBytes(filebytes, monstercsvpath, seed, options):
         
     if options[SKYSCRAPER]:
         RandomizeRuinsSkyscraper(filebytes)
+        
+    if options_numbers[MONSTER_GOLD_OFFSET_ADJUST] > 0:
+        AdjustMonsterGoldOffset(filebytes, options_numbers[MONSTER_GOLD_OFFSET_ADJUST])
     
+    if(abs(options_numbers[GOLD_TABLE_AMOUNT_MULTIPLIER] - 1.0) > 0.001):
+        AdjustGoldTableValues(filebytes, options_numbers[GOLD_TABLE_AMOUNT_MULTIPLIER])
+        
     WriteSeedTextToTitleScreen(filebytes, seed)
 
     return
@@ -608,7 +620,7 @@ def GetMeatLevelsDict(filebytes):
     
 # Picks random monsters for the specified encounter which match the target meat levels
 # Only replaces monsters (0x00-0x95). Does not replace non-monster enemies or bosses (> 0x96)
-def RandomizeEncounterMonstersByMeatLevel(filebytes, encounter_idx, target_meat_levels):
+def RandomizeEncounterMonstersByMeatLevel(filebytes, encounter_idx, target_meat_levels, encounter_level_adjust):
 
     meat_levels = GetMeatLevelsDict(filebytes)
         
@@ -621,6 +633,9 @@ def RandomizeEncounterMonstersByMeatLevel(filebytes, encounter_idx, target_meat_
         new_encounter_characters.append(encounter_character)
         if not encounter_character in non_replace_characters:
             target_meat_level = target_meat_levels[charpos]
+            target_meat_level += encounter_level_adjust
+            target_meat_level = max(0, target_meat_level)
+            target_meat_level = min(target_meat_level, 0xf)
             success = False
             while((not success) and (target_meat_level >= 0)):
                 success = True
@@ -840,6 +855,25 @@ def ReadGoldTableValue(filebytes, i):
 
     return int(cost)
 
+# Writes value to the G table used for fight rewards. Each value is two bytes
+def WriteGoldTableValue(filebytes, i, value):
+    startidx = 0x0001b2a4 + (i * 2)
+    remaining_value = value
+    
+    units_digit = (remaining_value % 10)
+    remaining_value -= units_digit
+    tens_digit = int((remaining_value % 100) / 10)
+    remaining_value -= (tens_digit * 10)
+    filebytes[0x0001b2a4 + (i * 2) + 1] = units_digit + (tens_digit * 0x10)
+    
+    hundreds_digit = int((remaining_value % 1000) / 100)
+    remaining_value -= (hundreds_digit * 100)
+    thousands_digit = int((remaining_value % 10000) / 1000)
+    remaining_value -= (thousands_digit * 1000)
+    filebytes[0x0001b2a4 + (i * 2)] = hundreds_digit + (thousands_digit * 0x10)
+
+    return
+
 def ReadItemName(filebytes, idx):
     name = ""
     for i in range(0, 7):
@@ -1011,24 +1045,26 @@ def RandomizeMeatTransformationTable(filebytes):
             filebytes[0x0000afd3 + (row * 29) + col] = outcomes[col]
     return
     
-def RandomizeMeatResultLists(filebytes):
+def RandomizeMeatResultLists(filebytes, level_adjust):
     meat_levels = GetMeatLevelsDict(filebytes)
     
     for monster_class in range(0, 25):
         for level in range(0, 16):
+            target_level = level + level_adjust
+            target_level = max(0, target_level)
             monster_id = -1
             
             # Check for a monster in this class with the correct meat level
             for class_member in range(0, 6):
                 class_member_id = (monster_class * 6) + class_member
-                if meat_levels[class_member_id] == level:
+                if meat_levels[class_member_id] == target_level:
                     monster_id = class_member_id
                     
             if monster_id < 0:
                 # Check for a monster in this class with meat level one lower
                 for class_member in range(0, 6):
                     class_member_id = (monster_class * 6) + class_member
-                    if meat_levels[class_member_id] == (level - 1):
+                    if meat_levels[class_member_id] == (target_level - 1):
                         monster_id = class_member_id
                         
             if monster_id < 0:
@@ -1036,7 +1072,7 @@ def RandomizeMeatResultLists(filebytes):
                     # Check for a monster in this class with meat level one higher
                     for class_member in range(0, 6):
                         class_member_id = (monster_class * 6) + class_member
-                        if meat_levels[class_member_id] == (level + 1):
+                        if meat_levels[class_member_id] == (target_level + 1):
                             monster_id = class_member_id
                             
             if monster_id < 0:
@@ -1047,7 +1083,7 @@ def RandomizeMeatResultLists(filebytes):
                 id_offset = random.randrange(0, id_range)
                 for i in range(0, id_range):
                     check_monster_id = (i + id_offset) % id_range
-                    if meat_levels[check_monster_id] == level:
+                    if meat_levels[check_monster_id] == target_level:
                         monster_id = check_monster_id
                         break
                         
@@ -2322,6 +2358,24 @@ def RandomizeRuinsSkyscraper(filebytes):
     RandomizeTowerSection(filebytes, first_room, remaining_rooms)
         
     return
+    
+def AdjustMonsterGoldOffset(filebytes, gold_offset_adjust):
+    for midx in range(0x00, 0xc8):
+        byte_val = ReadCharacterGoldTableIndex(filebytes, midx)
+        gold_offset = byte_val & 0x0f
+        gold_offset += gold_offset_adjust
+        gold_offset = max(1, gold_offset) # gold offset 0 is 0GP, which is just too cruel
+        gold_offset = min(gold_offset, 0xf)
+        byte_val = (byte_val & ~(0x0f))
+        filebytes[0x0001aaee + (midx * 9)] = (byte_val | gold_offset)
+    return
+    
+def AdjustGoldTableValues(filebytes, adjust_multiplier):
+    for offset in range(0, 0x10):
+        gold_val = ReadGoldTableValue(filebytes, offset)
+        gold_val = int(gold_val * adjust_multiplier)
+        WriteGoldTableValue(filebytes, offset, gold_val)
+    return
 
 def ApplyIPSPatch(filebytes, patchbytes):
     patch_offset = 0
@@ -2365,7 +2419,7 @@ def ApplyIPSPatch(filebytes, patchbytes):
     
     return True
     
-def FFLRandomize(seed, rompath, monstercsvpath, options):
+def FFLRandomize(seed, rompath, monstercsvpath, options, options_numbers):
 
     print("Seed: ", seed)
     random.seed(seed)
@@ -2374,6 +2428,8 @@ def FFLRandomize(seed, rompath, monstercsvpath, options):
     for option in options.keys():
         if not options[option]:
             print(command_line_switches[option])
+    for option in options_numbers.keys():
+        print(command_line_switches_numbers[option], options_numbers[option])
 
     # read bytes from input file
     inf = open(rompath, 'rb')
@@ -2403,7 +2459,7 @@ def FFLRandomize(seed, rompath, monstercsvpath, options):
     ##########################
 
     print("Randomizing...")
-    RandomizeFFLRomBytes(filebytes, monstercsvpath, seed, options)
+    RandomizeFFLRomBytes(filebytes, monstercsvpath, seed, options, options_numbers)
     
     # construct output filename
     q = pathlib.Path(rompath).with_name("FFL_" + str(seed) + ".gb")
@@ -2416,7 +2472,7 @@ def FFLRandomize(seed, rompath, monstercsvpath, options):
     
     return
     
-def PromptForOptions(options):
+def PromptForOptions(options, options_numbers):
 
     prompt_strings = { MUTANT_ABILITIES:"Randomize mutant abilities?", \
         ARMOR:"Randomize armor?", COMBAT_ITEMS:"Randomize combat items?", \
@@ -2428,14 +2484,27 @@ def PromptForOptions(options):
         TOWER:"Randomize tower exits?", DUNGEONS:"Randomize dungeon exits?", SKYSCRAPER:"Randomize skyscraper exits?" \
         }
         
+    number_prompt_strings = { TRANSFORMATION_LEVEL_ADJUST:"Edit meat transformation level adjust? Type number to edit:", \
+        ENCOUNTER_LEVEL_ADJUST:"Edit encounter level adjust? Type number to edit:", \
+        MONSTER_GOLD_OFFSET_ADJUST:"Edit monster gold table adjust? Type number to edit:", \
+        GOLD_TABLE_AMOUNT_MULTIPLIER:"Edit gold table value multiplier? Type number to edit:" \
+        }
+        
     for switch in prompt_strings.keys():
         options[switch]=True
         response = input(prompt_strings[switch] + " Default Yes, type N for No:")
         if response == "N":
             options[switch]=False
-
+            
+    for switch in number_prompt_strings.keys():
+        response = input(number_prompt_strings[switch])
+        try:
+            options_numbers[switch] = float(response)
+        except ValueError:
+            pass
+            
     return
-
+    
 print("FFL Randomizer version", VERSION)
 
 rompath = ""
@@ -2446,13 +2515,24 @@ options = { MUTANT_ABILITIES:True, ARMOR:True, COMBAT_ITEMS:True, CHARACTER_ITEM
     SHOPS:True, CHESTS:True, MONSTERS:True, ENCOUNTERS:True, GUILD_MONSTERS:True, HP_TABLE:True,
     MUTANT_RACE:True, MEAT:True, PATCH:True, TOWER:True, DUNGEONS:True, SKYSCRAPER:True }
     
+options_numbers = { TRANSFORMATION_LEVEL_ADJUST:0, ENCOUNTER_LEVEL_ADJUST:0, MONSTER_GOLD_OFFSET_ADJUST:0, \
+    GOLD_TABLE_AMOUNT_MULTIPLIER:1.0}
+    
 command_line_switches = { MUTANT_ABILITIES:"nomutantabilities", ARMOR:"noarmor", COMBAT_ITEMS:"nocombatitems", \
     CHARACTER_ITEMS:"nocharacteritems", ENEMY_ITEMS:"noenemyitems", \
     SHOPS:"noshops", CHESTS:"nochests", MONSTERS:"nomonsters", ENCOUNTERS:"noencounters", \
     GUILD_MONSTERS:"noguildmonsters", HP_TABLE:"nohptable", MUTANT_RACE:"nomutantrace", \
     MEAT:"nomeat", PATCH:"nopatch", TOWER:"notower", DUNGEONS:"nodungeons", SKYSCRAPER:"noskyscraper" }
+    
+command_line_switches_numbers = { TRANSFORMATION_LEVEL_ADJUST:"transformation_level", \
+    ENCOUNTER_LEVEL_ADJUST:"encounter_level", MONSTER_GOLD_OFFSET_ADJUST:"monster_gold", \
+    GOLD_TABLE_AMOUNT_MULTIPLIER:"gold_table_multiplier" \
+    }
 
 if len(sys.argv) >= 4:
+    
+    # Command line mode
+    
     rompath = sys.argv[1]
     monstercsvpath = sys.argv[2]
     seed = int(sys.argv[3])
@@ -2463,7 +2543,28 @@ if len(sys.argv) >= 4:
             switchidx = switch_vals.index(sys.argv[argidx])
             option = switch_keys[switchidx]
             options[option] = False
+    
+    switch_keys = list(command_line_switches_numbers.keys())
+    for switch_key in switch_keys:
+        switch_val = command_line_switches_numbers[switch_key]
+        if switch_val in sys.argv[4:]:
+            switchidx = sys.argv.index(switch_val)
+            if (switchidx + 1) < len(sys.argv):
+                try:
+                    options_numbers[switch_key] = float(sys.argv[switchidx + 1])
+                except ValueError:
+                    pass
+                    
+    if "harder_encounters" in sys.argv[4:]:
+        options_numbers[TRANSFORMATION_LEVEL_ADJUST] = -1
+        options_numbers[ENCOUNTER_LEVEL_ADJUST] = 1
+        options_numbers[MONSTER_GOLD_OFFSET_ADJUST] = -1
+        options_numbers[GOLD_TABLE_AMOUNT_MULTIPLIER] = 0.7
+        
 else:
+
+    # Interactive mode
+
     rompath = input("Enter path to rom:")
     rompath = rompath.strip("\"")
     monstercsvpath = input("Enter path to monster CSV:")
@@ -2478,6 +2579,6 @@ else:
         seed = int(seed_str)
     change_options = input("Change options? Default No, type Y for Yes:")
     if change_options == "Y":
-        PromptForOptions(options)
+        PromptForOptions(options, options_numbers)
 
-FFLRandomize(seed, rompath, monstercsvpath, options)
+FFLRandomize(seed, rompath, monstercsvpath, options, options_numbers)
