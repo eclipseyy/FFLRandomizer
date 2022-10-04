@@ -15,7 +15,7 @@ You have to supply the path to the FFL rom and the path to the monster CSV. You 
 
 Silent mode: randomize_ffl rompath monstercsvpath seed \[options\]<br/>
 Valid options are nomutantabilities, noarmor, nocombatitems, nocharacteritems, noenemyitems, noshops, nochests, nomonsters, noencounters, noguildmonsters, nohptable, nomutantrace, nomeat, nopatch, notower, nodungeons, noskyscraper, transformation_level x, encounter_level x, monster_gold x, gold_table_multiplier x, harder_encounters. You can specify multiple options, separated by spaces.<br/>
-Some combinations of options might unbalance the game. For example, if you use "noencounters" without "nomonsters", some encounters will probably have inappropriately high level monsters, and be difficult to win.<br/>
+Some combinations of options might unbalance the game.<br/>
 For a tougher challenge, the harder_encounters option populates encounters with higher level monsters. Meat transformations and gold combat rewards are adjusted to compensate. harder_encounters is equivalent to transformation_level -1 encounter_level 1 monster_gold -1 gold_table_multiplier 0.7.<br/>
 
 Currently randomized:
