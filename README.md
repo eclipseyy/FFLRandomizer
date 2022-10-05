@@ -68,6 +68,7 @@ Contact: eclipseyy@gmx.com. PLEASE email me with your feedback, suggestions, etc
 
 ## Version history
 
+v0.009 - prompt for harder encounters option in interactive mode<br/>
 v0.008 - harder_encounters option. Tweak monster CSV a bit.<br/>
 v0.007 - randomize dungeon and skyscraper exits<br/>
 v0.006 - randomize connections between rooms in the tower. Tweaks, bug fixes.<br/>

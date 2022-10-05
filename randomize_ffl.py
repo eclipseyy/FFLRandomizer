@@ -4,7 +4,7 @@ import pathlib
 import csv
 import sys
 
-VERSION = "0.008"
+VERSION = "0.009"
 
 # contact: eclipseyy@gmx.com
 
@@ -2505,6 +2505,13 @@ def PromptForOptions(options, options_numbers):
             
     return
     
+def ApplyHarderEncounters(options_numbers):
+    options_numbers[TRANSFORMATION_LEVEL_ADJUST] = -1
+    options_numbers[ENCOUNTER_LEVEL_ADJUST] = 1
+    options_numbers[MONSTER_GOLD_OFFSET_ADJUST] = -1
+    options_numbers[GOLD_TABLE_AMOUNT_MULTIPLIER] = 0.7
+    return
+    
 print("FFL Randomizer version", VERSION)
 
 rompath = ""
@@ -2556,11 +2563,7 @@ if len(sys.argv) >= 4:
                     pass
                     
     if "harder_encounters" in sys.argv[4:]:
-        options_numbers[TRANSFORMATION_LEVEL_ADJUST] = -1
-        options_numbers[ENCOUNTER_LEVEL_ADJUST] = 1
-        options_numbers[MONSTER_GOLD_OFFSET_ADJUST] = -1
-        options_numbers[GOLD_TABLE_AMOUNT_MULTIPLIER] = 0.7
-        
+        ApplyHarderEncounters(options_numbers)
 else:
 
     # Interactive mode
@@ -2580,5 +2583,8 @@ else:
     change_options = input("Change options? Default No, type Y for Yes:")
     if change_options == "Y":
         PromptForOptions(options, options_numbers)
+    apply_harder_encounters = input("Make encounters harder? Default No, type Y for Yes:")
+    if apply_harder_encounters:
+        ApplyHarderEncounters(options_numbers)
 
 FFLRandomize(seed, rompath, monstercsvpath, options, options_numbers)
