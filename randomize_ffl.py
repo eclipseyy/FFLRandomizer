@@ -3,8 +3,10 @@ import time
 import pathlib
 import csv
 import sys
+import enum
+import math
 
-VERSION = "0.009"
+VERSION = "0.010"
 
 # contact: eclipseyy@gmx.com
 
@@ -26,6 +28,8 @@ PATCH = 13
 TOWER = 14
 DUNGEONS = 15
 SKYSCRAPER = 16
+SMALL_PICS = 17
+CONTINENT = 18
 
 # option definitions (numbers)
 TRANSFORMATION_LEVEL_ADJUST = 101
@@ -58,7 +62,7 @@ armor_flags = [0x04, 0x08, 0x10, 0x20]
 
 story_items = [0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1c, 0x1d, 0x1e, 0x1f, 0x7e, 0x7f]
 
-def RandomizeFFLRomBytes(filebytes, monstercsvpath, seed, options, options_numbers):
+def RandomizeFFLRomBytes(filebytes, monstercsvpath, ffl2bytes, seed, options, options_numbers):
 
     encounter_meat_levels = ReadAllEncounterCharacterMeatLevels(filebytes)
     character_abils = ReadAllCharacterAbilities(filebytes)
@@ -145,6 +149,12 @@ def RandomizeFFLRomBytes(filebytes, monstercsvpath, seed, options, options_numbe
     
     if(abs(options_numbers[GOLD_TABLE_AMOUNT_MULTIPLIER] - 1.0) > 0.001):
         AdjustGoldTableValues(filebytes, options_numbers[GOLD_TABLE_AMOUNT_MULTIPLIER])
+        
+    if options[SMALL_PICS]:
+        RandomizeSmallPics(filebytes, ffl2bytes)
+        
+    if options[CONTINENT]:
+        RandomlyGenerateContinentMap(filebytes)
         
     WriteSeedTextToTitleScreen(filebytes, seed)
 
@@ -2376,6 +2386,572 @@ def AdjustGoldTableValues(filebytes, adjust_multiplier):
         gold_val = int(gold_val * adjust_multiplier)
         WriteGoldTableValue(filebytes, offset, gold_val)
     return
+    
+def RandomizeSmallPics(filebytes, ffl2bytes):
+
+    pc_male_addresses = [0x6000, 0x6200]
+    npc_male_addresses = [0x7200, 0x7300, 0x7400]
+    pc_female_addresses = [0x6100, 0x6300]
+    npc_female_addresses = [0x6f00, 0x7100]
+    
+    if len(ffl2bytes) > 0:
+        # copy FFL2 human and mutant pics
+        RandomlyCopyFFL2PicsToFFL(filebytes, ffl2bytes, [0x6000], [0xc000])
+        RandomlyCopyFFL2PicsToFFL(filebytes, ffl2bytes, [0x6100], [0xc100])
+        RandomlyCopyFFL2PicsToFFL(filebytes, ffl2bytes, [0x6200], [0xc200])
+        RandomlyCopyFFL2PicsToFFL(filebytes, ffl2bytes, [0x6300], [0xc300])
+    
+        # swap FFL NPC pics with human/mutant pics
+        RandomlySwapSmallPics(filebytes, pc_male_addresses, npc_male_addresses)
+        RandomlySwapSmallPics(filebytes, pc_female_addresses, npc_female_addresses)
+
+        # copy FFL2 pics which resemble humans to human/mutant
+        ffl2_male_addresses = [0xe900, 0xec00, 0xef00, 0xf300, 0xf600, 0xf900, 0xfc00, 0x10000, 0x10100]
+        ffl2_female_addresses = [0xe500, 0xed00, 0xee00, 0xf200, 0xfd00]
+        ffl_male_addresses = [] + pc_male_addresses + npc_male_addresses
+        ffl_female_addresses = [] + pc_female_addresses + npc_female_addresses
+        RandomlyCopyFFL2PicsToFFL(filebytes, ffl2bytes, ffl_male_addresses, ffl2_male_addresses)
+        RandomlyCopyFFL2PicsToFFL(filebytes, ffl2bytes, ffl_female_addresses, ffl2_female_addresses)
+        
+        # copy monster pics
+        RandomlyCopyFFL2PicsToFFL(filebytes, ffl2bytes, [0x6400], [0xe600, 0xe700, 0xe800]) # skel etc
+        RandomlyCopyFFL2PicsToFFL(filebytes, ffl2bytes, [0x6500], [0xd800, 0xdd00, 0xe100, 0xe300]) # gob etc
+        RandomlyCopyFFL2PicsToFFL(filebytes, ffl2bytes, [0x6600], [0xcc00, 0xd500, 0xd900, 0xe200]) # snek etc
+        RandomlyCopyFFL2PicsToFFL(filebytes, ffl2bytes, [0x6700], [0xdb00, 0xdc00]) # bird etc
+        RandomlyCopyFFL2PicsToFFL(filebytes, ffl2bytes, [0x6800], [0xda00, 0xdf00, 0xe400]) # fiend etc
+        RandomlyCopyFFL2PicsToFFL(filebytes, ffl2bytes, [0x6900], [0xc600, 0xd300]) # octopus, plant, etc
+        RandomlyCopyFFL2PicsToFFL(filebytes, ffl2bytes, [0x6a00], [0xcb00, 0xcd00, 0xea00]) # slime etc
+        RandomlyCopyFFL2PicsToFFL(filebytes, ffl2bytes, [0x6b00], [0xd400, 0xd700, 0xd800]) # liz etc
+        RandomlyCopyFFL2PicsToFFL(filebytes, ffl2bytes, [0x6c00], [0xce00, 0xcf00, 0xd000, 0xd200, 0xe000]) # insect etc
+        RandomlyCopyFFL2PicsToFFL(filebytes, ffl2bytes, [0x6d00], [0xc800, 0xca00]) # man etc
+        RandomlyCopyFFL2PicsToFFL(filebytes, ffl2bytes, [0x6e00], [0xd100]) # fish etc
+    else:
+        # swap FFL NPC pics with human/mutant pics
+        RandomlySwapSmallPics(filebytes, pc_male_addresses, npc_male_addresses)
+        RandomlySwapSmallPics(filebytes, pc_female_addresses, npc_female_addresses)
+
+    return
+    
+def RandomlyCopyFFL2PicsToFFL(filebytes, ffl2bytes, ffl_addresses, ffl2_addresses):
+    remaining_ffl2_addresses = list(ffl2_addresses)
+    for ffl_addr in ffl_addresses:
+        if random.randrange(3) == 0:
+            continue
+        ffl2_addr = random.choice(remaining_ffl2_addresses)
+        for i in range(0, 0x100):
+            filebytes[ffl_addr + i] = ffl2bytes[ffl2_addr + i]
+        remaining_ffl2_addresses.remove(ffl2_addr)
+    return
+    
+def RandomlySwapSmallPics(filebytes, pc_addresses, npc_addresses):
+    npc_indices = list(range(0, len(npc_addresses)))
+    for pc_addr in pc_addresses:
+        if random.randrange(3) == 0:
+            continue
+        data_pc = filebytes[pc_addr:pc_addr+0x100]
+        pick_idx = random.choice(npc_indices)
+        npc_addr = npc_addresses[pick_idx]
+        data_npc = filebytes[npc_addr:npc_addr+0x100]
+        for i in range(0, 0x100):
+            filebytes[pc_addr + i] = data_npc[i]
+            filebytes[npc_addr + i] = data_pc[i]
+        npc_indices.remove(pick_idx)
+    return
+
+MAP_X_MAX = 0x3e
+MAP_Y_MAX = 0x3d
+
+class MapChunkType(enum.Enum):
+    TILE = 0 # Q in fledermaus
+    SQUARE = 1 # E in fledermaus
+    RING = 2 # A in fledermaus
+    RING_HET = 3 # S in fledermaus
+    CHECK = 4 # D in fledermaus
+    CHECK_HET = 5 # F in fledermaus
+
+class MapChunk:
+    def Init(self, primary_tile, secondary_tile, pattern, x_pos, y_pos, x_size, y_size):
+        self.primary_tile = primary_tile
+        self.secondary_tile = secondary_tile
+        self.pattern = pattern
+        self.x_pos = x_pos
+        self.y_pos = y_pos
+        self.x_size = x_size
+        self.y_size = y_size
+        
+    primary_tile = 0
+    secondary_tile = 0
+    pattern = MapChunkType.TILE
+    x_pos = 0
+    y_pos = 0
+    x_size = 0
+    y_size = 0
+    
+    def GetBytes(self):
+        bytevals = []
+        
+        # [0]
+        byte_val = self.primary_tile
+        if self.pattern == MapChunkType.SQUARE:
+            byte_val |= 0x80
+        else:
+            if self.pattern != MapChunkType.TILE:
+                byte_val |= 0x40
+        bytevals.append(byte_val)
+        
+        # [1]
+        byte_val = self.y_pos << 2
+        byte_val |= ((self.x_pos & 0xf0) >> 4)
+        bytevals.append(byte_val)
+        
+        # [2]
+        byte_val = (self.y_size >> 2)
+        byte_val |= ((self.x_pos & 0x0f) << 4)
+        bytevals.append(byte_val)
+        
+        # [3]
+        if GetMapChunkSize(self.pattern) > 3:
+            byte_val = self.x_size
+            byte_val |= ((self.y_size % 4) * 0x40)
+            bytevals.append(byte_val)
+            
+        # [4]
+        if GetMapChunkSize(self.pattern) > 4:
+            byte_val = self.secondary_tile
+            if self.pattern == MapChunkType.RING_HET:
+                byte_val |= 0x40
+            if self.pattern == MapChunkType.CHECK:
+                byte_val |= 0x80
+            if self.pattern == MapChunkType.CHECK_HET:
+                byte_val |= 0xc0
+            bytevals.append(byte_val)
+        return bytevals
+    
+def GetMapChunkSize(map_chunk_type):
+    if map_chunk_type == MapChunkType.TILE:
+        return 3
+    if map_chunk_type == MapChunkType.SQUARE:
+        return 4
+    return 5
+    
+def RandomlyGenerateContinentMap(filebytes):
+    
+    walkable_tiles = [0x01, 0x02, 0x03, 0x16, 0x17, 0x19, 0x1b, 0x1c, 0x1d]
+    backing_tile = 0x1e # mountain
+    special_tiles = [0x0d, 0x12, 0x0e, 0x0f, 0x06, 0x08, 0x0a]
+    
+    best_map_chunks = []
+    best_score = 0
+    best_exits = []
+    attempts = 0
+
+    while attempts < 10:
+        map_cols = [[backing_tile for y in range(0, MAP_Y_MAX + 1)] for x in range(0, MAP_X_MAX + 1)]
+        chunks = []
+        fits_in_size = False
+        while not fits_in_size:
+            attempts += 1
+            chunks = []
+            
+            # define zones on the map where forest and desert are allowed
+            # format: [[start_x, start_y], [end_x, end_y]]
+            default_zone = [[0, 0], [MAP_X_MAX, MAP_Y_MAX]]
+            forest_zone = []
+            zone_size_x = random.randrange(int(0.5 * MAP_X_MAX), int(0.75 * MAP_X_MAX))
+            zone_size_y = random.randrange(int(0.5 * MAP_Y_MAX), int(0.75 * MAP_Y_MAX))
+            forest_zone.append([random.randrange(0, MAP_X_MAX - zone_size_x), random.randrange(0, MAP_Y_MAX - zone_size_y)])
+            forest_zone.append([forest_zone[0][0] + zone_size_x, forest_zone[0][1] + zone_size_y])
+            desert_zone = []
+            zone_size_x = random.randrange(int(0.5 * MAP_X_MAX), int(0.75 * MAP_X_MAX))
+            zone_size_y = random.randrange(int(0.5 * MAP_Y_MAX), int(0.75 * MAP_Y_MAX))
+            desert_zone.append([random.randrange(0, MAP_X_MAX - zone_size_x), random.randrange(0, MAP_Y_MAX - zone_size_y)])
+            desert_zone.append([desert_zone[0][0] + zone_size_x, desert_zone[0][1] + zone_size_y])
+            
+            # make some largeish areas
+            tilechoices = [0x1b, 0x1c, 0x1d, 0x00]
+            num_areas = 15
+            for i in range(0, num_areas):
+                if i < len(tilechoices):
+                    tile = tilechoices[i]
+                else:
+                    tile = random.choice(tilechoices)
+                if i > (num_areas - 2):
+                    tile = 0x00
+                new_chunk = MapChunk()
+                new_chunk.Init(tile, tile, MapChunkType.CHECK, 0, 0, 0, 0)
+                zone = default_zone
+                if tile == 0x1c:
+                    zone = forest_zone
+                if tile == 0x1d:
+                    zone = desert_zone
+                new_chunk.x_pos = random.randrange(zone[0][0], min(zone[0][0] + 40, zone[1][0] - 1)) # don't start too close to the edge
+                new_chunk.y_pos = random.randrange(zone[0][1], min(zone[0][1] + 40, zone[1][1] - 1)) # don't start too close to the edge
+                new_chunk.x_size = random.randrange(min((zone[1][0] - new_chunk.x_pos) - 1, 16), (zone[1][0] - new_chunk.x_pos))
+                new_chunk.y_size = random.randrange(min((zone[1][1] - new_chunk.y_pos) - 1, 16), (zone[1][1] - new_chunk.y_pos))
+                chunks.append(new_chunk)
+                SanityCheckChunks(chunks)
+            
+            # make rings and areas
+            num_areas = 25
+            for i in range(0, num_areas):
+                tile = random.choice([0x1b, 0x1b, 0x1b, 0x1c, 0x1c, 0x1c, 0x1d, 0x1d, 0x1d, 0x17, 0x1e, 0x1e, 0x1e, 0x1e, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])
+                if i > (num_areas - 4):
+                    tile = 0x00
+                zone = default_zone
+                if tile == 0x1c:
+                    zone = forest_zone
+                if tile in [0x17, 0x1d]: #spikes are also constrained to desert zone
+                    zone = desert_zone
+                new_chunk = MapChunk()
+                new_chunk.Init(tile, tile, MapChunkType.RING, 0, 0, 0, 0)
+                if random.randrange(4) == 0:
+                    new_chunk.pattern = MapChunkType.CHECK
+                new_chunk.x_pos = random.randrange(zone[0][0], zone[1][0] - 1)
+                new_chunk.y_pos = random.randrange(zone[0][1], zone[1][1] - 1)
+                new_chunk.x_size = random.randrange(1, (zone[1][0] - new_chunk.x_pos))
+                new_chunk.y_size = random.randrange(1, (zone[1][1] - new_chunk.y_pos))
+                chunks.append(new_chunk)
+                SanityCheckChunks(chunks)
+                
+            EvaluateMap(map_cols, chunks, backing_tile)
+            patches = GetWalkablePatches(map_cols, walkable_tiles)
+            while len(patches) > 1:
+                LinkTwoWalkablePatches(map_cols, chunks, patches)
+                SanityCheckChunks(chunks)
+                EvaluateMap(map_cols, chunks, backing_tile)
+                patches = GetWalkablePatches(map_cols, walkable_tiles)
+
+            # Format of entrance data:
+            # [0] chunks, [1] required area x, [2] required area y, [3] exit offsets, [4] exit position offset x, [5] exit position offset y
+            # Chunk data:
+            # [0] primary tile, [1] secondary tile, [2] chunk type, [3] x offset, [4] y offset, [5] chunk width, [6] chunk height
+            entrances_data = []
+            entrances_data.append([[[0x0c, 0x0c, MapChunkType.SQUARE, 0, 0, 1, 2]], 1, 2, [0x78], 0, 1]) # tower
+            entrances_data.append([[[0x12, 0x12, MapChunkType.TILE, 0, 0, 1, 1]], 1, 1, [0x10e, 0x110], 0, 0]) # bandit cave
+            entrances_data.append([[[0x0e, 0x0e, MapChunkType.TILE, 0, 0, 1, 1]], 1, 1, [0x100], 0, 0]) # town of hero
+            entrances_data.append([[[0x0f, 0x0f, MapChunkType.TILE, 0, 0, 1, 1]], 1, 1, [0x10c], 0, 0]) # southeast town
+            entrances_data.append([[[0x04, 0x04, MapChunkType.SQUARE, 0, 0, 2, 2]], 2, 2, [0x43, 0x101], 0, 1]) # castle shield
+            entrances_data.append([[[0x04, 0x04, MapChunkType.SQUARE, 0, 0, 2, 1], [0x08, 0x08, MapChunkType.SQUARE, 0, 1, 2, 1]], 2, 2, [0x10b], 0, 1]) # castle armor
+            entrances_data.append([[[0x04, 0x04, MapChunkType.SQUARE, 0, 0, 2, 1], [0x0a, 0x0a, MapChunkType.SQUARE, 0, 1, 2, 1]], 2, 2, [0x114], 0, 1]) # castle sword
+                
+            num_chunks = len(chunks)
+            entrances_attempts = 0
+            best_map_valid = False
+            best_entrances_score = 0
+            best_entrances_chunks = []
+            while entrances_attempts < 50:
+                # print("entrances attempt", entrances_attempts)
+                map_valid = False
+                del(chunks[num_chunks:])
+                EvaluateMap(map_cols, chunks, backing_tile)
+                entrances_attempts += 1
+                need_abort = False
+                for entrance in entrances_data:
+                    new_chunks = []
+                    for chunk_data in entrance[0]:
+                        new_chunk = MapChunk()
+                        new_chunk.Init(chunk_data[0], chunk_data[1], chunk_data[2], chunk_data[3], chunk_data[4], chunk_data[5], chunk_data[6])
+                        new_chunks.append(new_chunk)
+                    placed = TryPlaceSpecialTile(filebytes, map_cols, chunks, walkable_tiles, entrance[1], entrance[2], new_chunks, entrance[3], entrance[4], entrance[5])
+                    SanityCheckChunks(chunks)
+                    if not placed:
+                        need_abort = True
+                        break
+                    EvaluateMap(map_cols, chunks, backing_tile)
+                    if need_abort:
+                        break
+                if need_abort:
+                    continue
+                    
+                # if a walkable area was blocked off by placing towns etc, try again
+                patches = GetWalkablePatches(map_cols, walkable_tiles)
+                if len(patches) > 1:
+                    continue
+                    
+                this_score = CalculateContinentMapScore(map_cols, special_tiles)
+                if this_score > best_entrances_score:
+                    # print("new best score:", this_score)
+                    best_entrances_score = this_score
+                    best_entrances_chunks = chunks[num_chunks:]
+                    best_map_valid = True
+                
+            if not best_map_valid:
+                continue
+                
+            if best_map_valid:
+                del(chunks[num_chunks:])
+                for c in best_entrances_chunks:
+                    chunks.append(c)
+                EvaluateMap(map_cols, chunks, backing_tile)
+                
+            for i in range(0, 10):
+                total_size = 1 + sum([GetMapChunkSize(c.pattern) for c in chunks])
+                if total_size >= 325:
+                    break
+                if TryAddRandomBridge(map_cols, chunks, 0x00, walkable_tiles, 0x02, 0x03):
+                    SanityCheckChunks(chunks)
+                    EvaluateMap(map_cols, chunks, backing_tile)
+
+            total_size = 1 + sum([GetMapChunkSize(c.pattern) for c in chunks])
+            fits_in_size = (total_size <= 328)
+            
+        # give the new map a score based on distances between entrances - higher is better
+        # print("map created")
+        this_score = CalculateContinentMapScore(map_cols, special_tiles)
+        if this_score > best_score:
+            # print("new best score:", this_score)
+            best_score = this_score
+            best_map_chunks = chunks
+            # store a copy of exits data, as it's overwritten during map generation
+            best_exits_data = filebytes[0x92d0:0x985e]
+        else:
+            # print("doesn't beat best score:", this_score)
+            pass
+
+    WriteMapChunks(filebytes, best_map_chunks, 0xc000)
+    for i in range(0, len(best_exits_data)):
+        filebytes[0x92d0 + i] = best_exits_data[i]
+    
+    return
+    
+def SanityCheckChunks(chunks):
+    for c in chunks:
+        if (c.x_pos < 0) or (c.x_pos > MAP_X_MAX):
+            raise Exception("Chunk with bad x position: " + str(hex(c.x_pos)))
+        if (c.y_pos < 0) or (c.y_pos > MAP_X_MAX):
+            raise Exception("Chunk with bad y position: " + str(hex(c.y_pos)))
+        if ((c.x_pos + c.x_size) > MAP_X_MAX):
+            raise Exception("Chunk with bad x size: pos " + str(hex(c.x_pos)) + " size " + str(hex(c.x_size)))
+        if ((c.y_pos + c.y_size) > MAP_Y_MAX):
+            raise Exception("Chunk with bad y size: pos " + str(hex(c.y_pos)) + " size " + str(hex(c.y_size)))
+    return
+            
+    
+def CalculateContinentMapScore(map_cols, special_tiles):
+    this_score = 0
+    for special_tile in special_tiles:
+        locations = [[x, y] for x in range(0, MAP_X_MAX + 1) for y in range(0, MAP_Y_MAX + 1) if map_cols[x][y] == special_tile]
+        if len(locations) != 1:
+            raise Exception("Special tile " + str(hex(special_tile)) + " appears " + str(len(locations)) + " times")
+        this_loc = locations[0]
+        other_locations = [[x, y] for x in range(0, MAP_X_MAX + 1) for y in range(0, MAP_Y_MAX + 1) if ((map_cols[x][y] in special_tiles) and map_cols[x][y] != special_tile)]
+        closest_distance = min([ math.sqrt((abs(loc[0] - this_loc[0]) * abs(loc[0] - this_loc[0])) + (abs(loc[1] - this_loc[1]) * abs(loc[1] - this_loc[1]))) \
+            for loc in other_locations])
+        this_score += closest_distance
+    return this_score
+
+def TryPlaceSpecialTile(filebytes, map_cols, chunks, walkable_tiles, required_area_x, required_area_y, new_chunks, exit_indices, exit_offset_x, exit_offset_y):
+    start_pos = FindWalkablePatch(map_cols, walkable_tiles, required_area_x, required_area_y)
+    if len(start_pos) < 2:
+        return False
+    for new_chunk in new_chunks:
+        new_chunk.x_pos += start_pos[0]
+        new_chunk.y_pos += start_pos[1]
+        chunks.append(new_chunk)
+    for exit_idx in exit_indices:
+        SetExitPosition(filebytes, exit_idx, start_pos[0] + exit_offset_x, start_pos[1] + exit_offset_y)
+    return True
+    
+def SetExitPosition(filebytes, exit_offset, x, y):
+    filebytes[0x92d0 + (exit_offset * 3) + 1] = x
+    filebytes[0x92d0 + (exit_offset * 3) + 2] = y
+    return
+    
+def EvaluateMap(map_cols, chunks, default_tile):
+    for x in range(0, MAP_X_MAX + 1):
+        for y in range(0, MAP_Y_MAX + 1):
+            map_cols[x][y] = default_tile
+    
+    for chunk in chunks:
+        if chunk.pattern == MapChunkType.TILE:
+            map_cols[chunk.x_pos][chunk.y_pos] = chunk.primary_tile
+        if chunk.pattern == MapChunkType.SQUARE:
+            tile = chunk.primary_tile
+            for y in range(chunk.y_pos, chunk.y_pos + chunk.y_size):
+                for x in range(chunk.x_pos, chunk.x_pos + chunk.x_size):
+                    map_cols[x][y] = tile
+                    tile += 1
+                    tile %= 0x20
+        if chunk.pattern == MapChunkType.RING:
+            tile_offset = 1
+            tiles = [chunk.secondary_tile, chunk.primary_tile]
+            for y in range(chunk.y_pos, chunk.y_pos + chunk.y_size):
+                for x in range(chunk.x_pos, chunk.x_pos + chunk.x_size):
+                    if (x == chunk.x_pos) or (y == chunk.y_pos) or (x == (chunk.x_pos + chunk.x_size - 1)) or (y == (chunk.y_pos + chunk.y_size - 1)):
+                        map_cols[x][y] = tiles[tile_offset]
+                    tile_offset += 1
+                    tile_offset %= 2
+        if chunk.pattern == MapChunkType.RING_HET:
+            tile_offset = 1
+            tiles = [chunk.secondary_tile, chunk.primary_tile]
+            for y in range(chunk.y_pos, chunk.y_pos + chunk.y_size):
+                for x in range(chunk.x_pos, chunk.x_pos + chunk.x_size):
+                    if (x == chunk.x_pos) or (y == chunk.y_pos) or (x == (chunk.x_pos + chunk.x_size - 1)) or (y == (chunk.y_pos + chunk.y_size - 1)):
+                        map_cols[x][y] = tiles[tile_offset]
+                    tile_offset += 1
+                    tile_offset %= 2
+            map_cols[chunk.x_pos][chunk.y_pos] = chunk.secondary_tile # top left
+            map_cols[chunk.x_pos + chunk.x_size - 1][chunk.y_pos] = ((chunk.secondary_tile + 1) % 0x20) # top right
+            map_cols[chunk.x_pos][chunk.y_pos + chunk.y_size - 1] = ((chunk.secondary_tile + 2) % 0x20) # bottom left
+            map_cols[chunk.x_pos + chunk.x_size - 1][chunk.y_pos + chunk.y_size - 1] = ((chunk.secondary_tile + 3) % 0x20) # bottom right
+        if chunk.pattern == MapChunkType.CHECK:
+            # print("chunk tile", hex(chunk.secondary_tile), "x", hex(chunk.x_pos), "y", hex(chunk.y_pos), "size x", hex(chunk.x_size), "y", hex(chunk.y_size))
+            tile_offset = 0
+            tiles = [chunk.secondary_tile, chunk.primary_tile]
+            for y in range(chunk.y_pos, chunk.y_pos + chunk.y_size):
+                for x in range(chunk.x_pos, chunk.x_pos + chunk.x_size):
+                    map_cols[x][y] = tiles[tile_offset]
+                    tile_offset += 1
+                    tile_offset %= 2
+        if chunk.pattern == MapChunkType.CHECK_HET:
+            tile_offset = 0
+            tiles = [chunk.secondary_tile, chunk.primary_tile]
+            for y in range(chunk.y_pos, chunk.y_pos + chunk.y_size):
+                for x in range(chunk.x_pos, chunk.x_pos + chunk.x_size):
+                    map_cols[x][y] = tiles[tile_offset]
+                    tile_offset += 1
+                    tile_offset %= 2
+            map_cols[chunk.x_pos][chunk.y_pos] = chunk.secondary_tile # top left
+            map_cols[chunk.x_pos + chunk.x_size - 1][chunk.y_pos] = ((chunk.secondary_tile + 1) % 0x20) # top right
+            map_cols[chunk.x_pos][chunk.y_pos + chunk.y_size - 1] = ((chunk.secondary_tile + 2) % 0x20) # bottom left
+            map_cols[chunk.x_pos + chunk.x_size - 1][chunk.y_pos + chunk.y_size - 1] = ((chunk.secondary_tile + 3) % 0x20) # bottom right
+    return
+
+def GetWalkablePatches(map_cols, walkable_tiles):
+    patches = []
+    for x in range(0, MAP_X_MAX):
+        for y in range(0, MAP_Y_MAX):
+            cell_ref = [x, y]
+            if map_cols[x][y] in walkable_tiles:
+                if not any([cell_ref in patch for patch in patches]):
+                    patches.append(GetWalkablePatchByFloodFill(map_cols, cell_ref, walkable_tiles))
+    return patches
+    
+def GetWalkablePatchByFloodFill(map_cols, initial_cell, walkable_tiles):
+    patch = []
+    cells_to_evaluate = []
+    if map_cols[initial_cell[0]][initial_cell[1]] in walkable_tiles:
+        cells_to_evaluate.append(initial_cell)
+    while len(cells_to_evaluate) > 0:
+        cell = list(cells_to_evaluate[0])
+        patch.append(cell)
+        del(cells_to_evaluate[0])
+        # Test the four cells adjacent to this cell
+        if cell[0] > 0:
+            test_cell = [cell[0] - 1, cell[1]]
+            if (not test_cell in patch) and (not test_cell in cells_to_evaluate):
+                if map_cols[test_cell[0]][test_cell[1]] in walkable_tiles:
+                    cells_to_evaluate.append(test_cell)
+        if cell[0] < MAP_X_MAX:
+            test_cell = [cell[0] + 1, cell[1]]
+            if (not test_cell in patch) and (not test_cell in cells_to_evaluate):
+                if map_cols[test_cell[0]][test_cell[1]] in walkable_tiles:
+                    cells_to_evaluate.append(test_cell)
+        if cell[1] > 0:
+            test_cell = [cell[0], cell[1] - 1]
+            if (not test_cell in patch) and (not test_cell in cells_to_evaluate):
+                if map_cols[test_cell[0]][test_cell[1]] in walkable_tiles:
+                    cells_to_evaluate.append(test_cell)
+        if cell[1] < MAP_Y_MAX:
+            test_cell = [cell[0], cell[1] + 1]
+            if (not test_cell in patch) and (not test_cell in cells_to_evaluate):
+                if map_cols[test_cell[0]][test_cell[1]] in walkable_tiles:
+                    cells_to_evaluate.append(test_cell)            
+    return patch
+    
+def LinkTwoWalkablePatches(map_cols, chunks, patches):
+    # find closest cells
+    closest_pair = []
+    closest_pair_distance = 0x40 * 0x40
+    for cell_a in patches[0]:
+        for cell_b in patches[1]:
+            x_dist = abs(cell_a[0] - cell_b[0])
+            y_dist = abs(cell_a[1] - cell_b[1])
+            dist = math.sqrt((x_dist * x_dist) + (y_dist * y_dist))
+            if dist < closest_pair_distance:
+                closest_pair = [cell_a, cell_b]
+                closest_pair_distance = dist
+    
+    # link closest cells with a ring
+    min_x = min(closest_pair[0][0], closest_pair[1][0])
+    max_x = max(closest_pair[0][0], closest_pair[1][0])
+    min_y = min(closest_pair[0][1], closest_pair[1][1])
+    max_y = max(closest_pair[0][1], closest_pair[1][1])
+    new_chunk = MapChunk()
+    tile_choices = [map_cols[closest_pair[0][0]][closest_pair[0][1]], map_cols[closest_pair[1][0]][closest_pair[1][1]]]
+    new_chunk.primary_tile = random.choice(tile_choices)
+    new_chunk.secondary_tile = new_chunk.primary_tile
+    new_chunk.pattern = MapChunkType.RING
+    new_chunk.x_pos = min_x
+    new_chunk.y_pos = min_y
+    new_chunk.x_size = (max_x - min_x) + 1
+    new_chunk.y_size = (max_y - min_y) + 1
+    chunks.append(new_chunk)
+    return
+    
+def FindWalkablePatch(map_cols, walkable_tiles, x_size, y_size):
+    random_offset_x = random.randrange(0, MAP_X_MAX + 1)
+    random_offset_y = random.randrange(0, MAP_Y_MAX + 1)
+    for x_idx in range(0, MAP_X_MAX + 1):
+        for y_idx in range(0, MAP_Y_MAX + 1):
+            start_x = (x_idx + random_offset_x) % (MAP_X_MAX + 1)
+            start_y = (y_idx + random_offset_y) % (MAP_Y_MAX + 1)
+            is_walkable = True
+            for x in range(start_x, start_x + x_size):
+                for y in range(start_y, start_y + y_size):
+                    if not map_cols[x][y] in walkable_tiles:
+                        is_walkable = False
+                        break
+                if not is_walkable:
+                    break
+            if is_walkable:
+                return [start_x, start_y]
+    return []
+    
+def TryAddRandomBridge(map_cols, chunks, water_tile, walkable_tiles, horiz_bridge_tile, vert_bridge_tile):
+    offset_x = random.randrange(0, MAP_X_MAX)
+    offset_y = random.randrange(0, MAP_Y_MAX)
+    for i in range(0, MAP_X_MAX + 1):
+        x = (i + offset_x) % (MAP_X_MAX + 1)
+        if (x == 0) or (x == MAP_X_MAX):
+            continue
+        for j in range(0, MAP_Y_MAX + 1):
+            y = (j + offset_y) % (MAP_Y_MAX + 1)
+            if (y == 0) or (y == MAP_Y_MAX):
+                continue
+            tile = map_cols[x][y]
+            if (tile != horiz_bridge_tile) and (tile != vert_bridge_tile) and (tile in walkable_tiles):
+                top_tile = map_cols[x][y - 1]
+                top_l_tile = map_cols[x - 1][y - 1]
+                top_r_tile = map_cols[x + 1][y - 1]
+                bottom_tile = map_cols[x][y + 1]
+                bottom_l_tile = map_cols[x - 1][y + 1]
+                bottom_r_tile = map_cols[x + 1][y + 1]
+                left_tile = map_cols[x - 1][y]
+                right_tile = map_cols[x + 1][y]
+                if (top_l_tile == water_tile) or (top_r_tile == water_tile) or (bottom_l_tile == water_tile) or (bottom_r_tile == water_tile):
+                    continue
+                if (top_tile == water_tile) and (bottom_tile == water_tile) and (left_tile in walkable_tiles) and (right_tile in walkable_tiles):
+                    new_chunk = MapChunk()
+                    new_chunk.Init(horiz_bridge_tile, horiz_bridge_tile, MapChunkType.TILE, x, y, 1, 1)
+                    chunks.append(new_chunk)
+                    return True
+                if (left_tile == water_tile) and (right_tile == water_tile) and (top_tile in walkable_tiles) and (bottom_tile in walkable_tiles):
+                    new_chunk = MapChunk()
+                    new_chunk.Init(vert_bridge_tile, vert_bridge_tile, MapChunkType.TILE, x, y, 1, 1)
+                    chunks.append(new_chunk)
+                    return True
+    return False
+    
+def WriteMapChunks(filebytes, chunks, start_addr):
+    addr = start_addr
+    for chunk in chunks:
+        chunk_bytes = chunk.GetBytes()
+        for b in chunk_bytes:
+            filebytes[addr] = b
+            addr += 1
+    filebytes[addr] = 0xff
+    return
 
 def ApplyIPSPatch(filebytes, patchbytes):
     patch_offset = 0
@@ -2419,7 +2995,7 @@ def ApplyIPSPatch(filebytes, patchbytes):
     
     return True
     
-def FFLRandomize(seed, rompath, monstercsvpath, options, options_numbers):
+def FFLRandomize(seed, rompath, monstercsvpath, ffl2rompath, options, options_numbers):
 
     print("Seed: ", seed)
     random.seed(seed)
@@ -2448,6 +3024,15 @@ def FFLRandomize(seed, rompath, monstercsvpath, options, options_numbers):
         success = ApplyIPSPatch(filebytes, ipsfilebytes)
         if not success:
             raise Exception("Failed to apply IPS patch. It should be in the same directory as the rom, named \"ffltrt16.ips\"")
+            
+    # read FFL2 ROM
+    ffl2bytes = []
+    try:
+        inf = open(ffl2rompath, 'rb')
+        ffl2bytes = bytearray(inf.read())
+        inf.close()
+    except FileNotFoundError:
+        pass
 
     ##########################
 
@@ -2459,7 +3044,7 @@ def FFLRandomize(seed, rompath, monstercsvpath, options, options_numbers):
     ##########################
 
     print("Randomizing...")
-    RandomizeFFLRomBytes(filebytes, monstercsvpath, seed, options, options_numbers)
+    RandomizeFFLRomBytes(filebytes, monstercsvpath, ffl2bytes, seed, options, options_numbers)
     
     # construct output filename
     q = pathlib.Path(rompath).with_name("FFL_" + str(seed) + ".gb")
@@ -2481,8 +3066,8 @@ def PromptForOptions(options, options_numbers):
         ENCOUNTERS:"Randomize encounters?", GUILD_MONSTERS:"Randomize guild monsters?", \
         HP_TABLE:"Randomize HP table?", MUTANT_RACE:"Randomize mutant race?", \
         MEAT:"Randomize meat transformations?", PATCH:"Apply patch before randomization?", \
-        TOWER:"Randomize tower exits?", DUNGEONS:"Randomize dungeon exits?", SKYSCRAPER:"Randomize skyscraper exits?" \
-        }
+        TOWER:"Randomize tower exits?", DUNGEONS:"Randomize dungeon exits?", SKYSCRAPER:"Randomize skyscraper exits?", \
+        SMALL_PICS:"Randomize small pics?", CONTINENT:"Randomize Continent map?" }
         
     number_prompt_strings = { TRANSFORMATION_LEVEL_ADJUST:"Edit meat transformation level adjust? Type number to edit:", \
         ENCOUNTER_LEVEL_ADJUST:"Edit encounter level adjust? Type number to edit:", \
@@ -2515,12 +3100,14 @@ def ApplyHarderEncounters(options_numbers):
 print("FFL Randomizer version", VERSION)
 
 rompath = ""
+ffl2rompath = ""
 monstercsvpath = ""
 seed = 0
 
 options = { MUTANT_ABILITIES:True, ARMOR:True, COMBAT_ITEMS:True, CHARACTER_ITEMS:True, ENEMY_ITEMS:True, \
     SHOPS:True, CHESTS:True, MONSTERS:True, ENCOUNTERS:True, GUILD_MONSTERS:True, HP_TABLE:True,
-    MUTANT_RACE:True, MEAT:True, PATCH:True, TOWER:True, DUNGEONS:True, SKYSCRAPER:True }
+    MUTANT_RACE:True, MEAT:True, PATCH:True, TOWER:True, DUNGEONS:True, SKYSCRAPER:True, SMALL_PICS:True,
+    CONTINENT:True }
     
 options_numbers = { TRANSFORMATION_LEVEL_ADJUST:0, ENCOUNTER_LEVEL_ADJUST:0, MONSTER_GOLD_OFFSET_ADJUST:0, \
     GOLD_TABLE_AMOUNT_MULTIPLIER:1.0}
@@ -2529,7 +3116,8 @@ command_line_switches = { MUTANT_ABILITIES:"nomutantabilities", ARMOR:"noarmor",
     CHARACTER_ITEMS:"nocharacteritems", ENEMY_ITEMS:"noenemyitems", \
     SHOPS:"noshops", CHESTS:"nochests", MONSTERS:"nomonsters", ENCOUNTERS:"noencounters", \
     GUILD_MONSTERS:"noguildmonsters", HP_TABLE:"nohptable", MUTANT_RACE:"nomutantrace", \
-    MEAT:"nomeat", PATCH:"nopatch", TOWER:"notower", DUNGEONS:"nodungeons", SKYSCRAPER:"noskyscraper" }
+    MEAT:"nomeat", PATCH:"nopatch", TOWER:"notower", DUNGEONS:"nodungeons", SKYSCRAPER:"noskyscraper", \
+    SMALL_PICS:"nosmallpics", CONTINENT:"nocontinent" }
     
 command_line_switches_numbers = { TRANSFORMATION_LEVEL_ADJUST:"transformation_level", \
     ENCOUNTER_LEVEL_ADJUST:"encounter_level", MONSTER_GOLD_OFFSET_ADJUST:"monster_gold", \
@@ -2564,6 +3152,12 @@ if len(sys.argv) >= 4:
                     
     if "harder_encounters" in sys.argv[4:]:
         ApplyHarderEncounters(options_numbers)
+        
+    if "ffl2" in sys.argv[4:]:
+        ffl2idx = sys.argv.index("ffl2")
+        if (ffl2idx + 1) < len(sys.argv):
+            ffl2rompath = sys.argv[ffl2idx + 1]
+    
 else:
 
     # Interactive mode
@@ -2572,6 +3166,8 @@ else:
     rompath = rompath.strip("\"")
     monstercsvpath = input("Enter path to monster CSV:")
     monstercsvpath = monstercsvpath.strip("\"")
+    ffl2rompath = input("Enter path to FFL2 rom (optional):")
+    ffl2rompath = ffl2rompath.strip("\"")
     seed_str = input("Enter seed, or leave blank for random:")
     seed = 0
     if len(seed_str) == 0:
@@ -2587,4 +3183,4 @@ else:
     if apply_harder_encounters:
         ApplyHarderEncounters(options_numbers)
 
-FFLRandomize(seed, rompath, monstercsvpath, options, options_numbers)
+FFLRandomize(seed, rompath, monstercsvpath, ffl2rompath, options, options_numbers)
