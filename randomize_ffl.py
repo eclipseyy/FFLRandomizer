@@ -6,7 +6,7 @@ import sys
 import enum
 import math
 
-VERSION = "0.010"
+VERSION = "0.011"
 
 # contact: eclipseyy@gmx.com
 
@@ -2639,6 +2639,7 @@ def RandomlyGenerateContinentMap(filebytes):
             best_map_valid = False
             best_entrances_score = 0
             best_entrances_chunks = []
+            best_entrances_exits_data = []
             while entrances_attempts < 50:
                 # print("entrances attempt", entrances_attempts)
                 map_valid = False
@@ -2674,15 +2675,17 @@ def RandomlyGenerateContinentMap(filebytes):
                     best_entrances_score = this_score
                     best_entrances_chunks = chunks[num_chunks:]
                     best_map_valid = True
+                    best_entrances_exits_data = filebytes[0x92d0:0x985e]
                 
             if not best_map_valid:
                 continue
                 
-            if best_map_valid:
-                del(chunks[num_chunks:])
-                for c in best_entrances_chunks:
-                    chunks.append(c)
-                EvaluateMap(map_cols, chunks, backing_tile)
+            del(chunks[num_chunks:])
+            for c in best_entrances_chunks:
+                chunks.append(c)
+            EvaluateMap(map_cols, chunks, backing_tile)
+            for i in range(0, len(best_entrances_exits_data)):
+                filebytes[0x92d0 + i] = best_entrances_exits_data[i]
                 
             for i in range(0, 10):
                 total_size = 1 + sum([GetMapChunkSize(c.pattern) for c in chunks])

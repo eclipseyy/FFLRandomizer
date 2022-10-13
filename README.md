@@ -82,6 +82,7 @@ Contact: eclipseyy@gmx.com. PLEASE email me with your feedback, suggestions, etc
 
 ## Version history
 
+v0.011 - bug fix<br/>
 v0.010 - randomize small pictures, optionally copying them from FFL2 ROM. Randomly generate the World of Continent map<br/>
 v0.009 - prompt for harder encounters option in interactive mode<br/>
 v0.008 - harder_encounters option. Tweak monster CSV a bit.<br/>
