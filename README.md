@@ -45,10 +45,12 @@ If you want to cheat and see what's in a randomized rom, use Tower Reversed's fl
 | harder_encounters       | equivalent to transformation_level -1 encounter_level 1 monster_gold -1 gold_table_multiplier 0.7 |
 | nosmallpics             | Disables randomization of small pictures                                                          |
 | ffl2 ffl2rompath        | Sets path to FFL2 ROM, currently used only for randomization of small pictures                    |
-| nocontinent             | Disables randomization of the World of Continent map                                              |
+| worldmaps               | Enables randomization of world maps (currently Continent and Ocean)                               |
+| dungeonmaps             | Enables randomization of dungeon maps (currently selected areas up to and including Ocean)        |
 
 When mutant race randomization is enabled (which is the default), MUTANT will be renamed to S-MUT, A-MUT or D-MUT depending on which attribute is learned most quickly.<br/>
-When tower randomization is enabled (which is the default), you will likely visit the floors out of numerical order.
+When tower randomization is enabled (which is the default), you will likely visit the floors out of numerical order.<br/>
+I recommend enabling map randomization (worldmaps and dungeonmaps). The switches are disabled by default as the process takes a long time.<br/>
 
 ## Combat items
 
@@ -82,6 +84,7 @@ Contact: eclipseyy@gmx.com. PLEASE email me with your feedback, suggestions, etc
 
 ## Version history
 
+v0.012 - randomly generate maps up to World of Ocean - disabled by default, as the process takes a long time<br/>
 v0.011 - bug fix<br/>
 v0.010 - randomize small pictures, optionally copying them from FFL2 ROM. Randomly generate the World of Continent map<br/>
 v0.009 - prompt for harder encounters option in interactive mode<br/>

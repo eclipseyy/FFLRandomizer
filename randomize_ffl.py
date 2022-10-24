@@ -6,7 +6,7 @@ import sys
 import enum
 import math
 
-VERSION = "0.011"
+VERSION = "0.012"
 
 # contact: eclipseyy@gmx.com
 
@@ -29,7 +29,8 @@ TOWER = 14
 DUNGEONS = 15
 SKYSCRAPER = 16
 SMALL_PICS = 17
-CONTINENT = 18
+WORLD_MAPS = 18
+DUNGEON_MAPS = 19
 
 # option definitions (numbers)
 TRANSFORMATION_LEVEL_ADJUST = 101
@@ -153,8 +154,19 @@ def RandomizeFFLRomBytes(filebytes, monstercsvpath, ffl2bytes, seed, options, op
     if options[SMALL_PICS]:
         RandomizeSmallPics(filebytes, ffl2bytes)
         
-    if options[CONTINENT]:
+    if options[WORLD_MAPS]:
         RandomlyGenerateContinentMap(filebytes)
+        RandomlyGenerateOceanMap(filebytes)
+        RandomlyGenerateUnderseaMap(filebytes)
+        
+    if options[DUNGEON_MAPS]:
+        RandomlyGenerateBanditCaveMap(filebytes)
+        RandomlyGenerateCastleSwordMap(filebytes)
+        RandomlyGenerateFirstTowerSection(filebytes)
+        RandomlyGenerateOceanCaves1Map(filebytes)
+        RandomlyGenerateOceanCaves2Map(filebytes)
+        RandomlyGenerateUnderseaCavesMap(filebytes)
+        RandomlyGenerateDragonPalaceMap(filebytes)
         
     WriteSeedTextToTitleScreen(filebytes, seed)
 
@@ -2479,13 +2491,14 @@ class MapChunk:
         self.x_size = x_size
         self.y_size = y_size
         
-    primary_tile = 0
-    secondary_tile = 0
-    pattern = MapChunkType.TILE
-    x_pos = 0
-    y_pos = 0
-    x_size = 0
-    y_size = 0
+    def __init__(self):
+        self.primary_tile = 0
+        self.secondary_tile = 0
+        self.pattern = MapChunkType.TILE
+        self.x_pos = 0
+        self.y_pos = 0
+        self.x_size = 0
+        self.y_size = 0
     
     def GetBytes(self):
         bytevals = []
@@ -2526,6 +2539,11 @@ class MapChunk:
                 byte_val |= 0xc0
             bytevals.append(byte_val)
         return bytevals
+    
+    def MakeCopy(self):
+        new_chunk = MapChunk()
+        new_chunk.Init(self.primary_tile, self.secondary_tile, self.pattern, self.x_pos, self.y_pos, self.x_size, self.y_size)
+        return new_chunk
     
 def GetMapChunkSize(map_chunk_type):
     if map_chunk_type == MapChunkType.TILE:
@@ -2613,6 +2631,7 @@ def RandomlyGenerateContinentMap(filebytes):
                 chunks.append(new_chunk)
                 SanityCheckChunks(chunks)
                 
+            # link all walkable patches
             EvaluateMap(map_cols, chunks, backing_tile)
             patches = GetWalkablePatches(map_cols, walkable_tiles)
             while len(patches) > 1:
@@ -2621,6 +2640,7 @@ def RandomlyGenerateContinentMap(filebytes):
                 EvaluateMap(map_cols, chunks, backing_tile)
                 patches = GetWalkablePatches(map_cols, walkable_tiles)
 
+            # define data for entrances
             # Format of entrance data:
             # [0] chunks, [1] required area x, [2] required area y, [3] exit offsets, [4] exit position offset x, [5] exit position offset y
             # Chunk data:
@@ -2633,7 +2653,8 @@ def RandomlyGenerateContinentMap(filebytes):
             entrances_data.append([[[0x04, 0x04, MapChunkType.SQUARE, 0, 0, 2, 2]], 2, 2, [0x43, 0x101], 0, 1]) # castle shield
             entrances_data.append([[[0x04, 0x04, MapChunkType.SQUARE, 0, 0, 2, 1], [0x08, 0x08, MapChunkType.SQUARE, 0, 1, 2, 1]], 2, 2, [0x10b], 0, 1]) # castle armor
             entrances_data.append([[[0x04, 0x04, MapChunkType.SQUARE, 0, 0, 2, 1], [0x0a, 0x0a, MapChunkType.SQUARE, 0, 1, 2, 1]], 2, 2, [0x114], 0, 1]) # castle sword
-                
+
+            # place entrances
             num_chunks = len(chunks)
             entrances_attempts = 0
             best_map_valid = False
@@ -2686,7 +2707,8 @@ def RandomlyGenerateContinentMap(filebytes):
             EvaluateMap(map_cols, chunks, backing_tile)
             for i in range(0, len(best_entrances_exits_data)):
                 filebytes[0x92d0 + i] = best_entrances_exits_data[i]
-                
+
+            # add up to 10 bridges
             for i in range(0, 10):
                 total_size = 1 + sum([GetMapChunkSize(c.pattern) for c in chunks])
                 if total_size >= 325:
@@ -2759,6 +2781,9 @@ def SetExitPosition(filebytes, exit_offset, x, y):
     filebytes[0x92d0 + (exit_offset * 3) + 1] = x
     filebytes[0x92d0 + (exit_offset * 3) + 2] = y
     return
+    
+def GetExitPosition(filebytes, exit_offset):
+    return [filebytes[0x92d0 + (exit_offset * 3) + 1], filebytes[0x92d0 + (exit_offset * 3) + 2]]
     
 def EvaluateMap(map_cols, chunks, default_tile):
     for x in range(0, MAP_X_MAX + 1):
@@ -2911,6 +2936,25 @@ def FindWalkablePatch(map_cols, walkable_tiles, x_size, y_size):
                 return [start_x, start_y]
     return []
     
+def FindFirstWalkableAreaInCellList(map_cols, cell_list, walkable_tiles, x_size, y_size):
+    for cell_idx in range(0, len(cell_list)):
+        x = cell_list[cell_idx][0]
+        y = cell_list[cell_idx][1]
+        valid_area = True
+        for x_offset in range(0, x_size):
+            for y_offset in range(0, y_size):
+                if not [x + x_offset, y + y_offset] in cell_list:
+                    valid_area = False
+                    break
+                if not map_cols[x + x_offset][y + y_offset] in walkable_tiles:
+                    valid_area = False
+                    break
+            if not valid_area:
+                break
+        if valid_area:
+            return cell_list[cell_idx]
+    return []
+    
 def TryAddRandomBridge(map_cols, chunks, water_tile, walkable_tiles, horiz_bridge_tile, vert_bridge_tile):
     offset_x = random.randrange(0, MAP_X_MAX)
     offset_y = random.randrange(0, MAP_Y_MAX)
@@ -2954,6 +2998,1831 @@ def WriteMapChunks(filebytes, chunks, start_addr):
             filebytes[addr] = b
             addr += 1
     filebytes[addr] = 0xff
+    return
+    
+class MultiRoomDungeonParams:
+    def __init__(self):
+        self.walkable_tiles = []
+        self.map_fill_tile = 0x00
+        self.backing_tile = 0x00
+        self.room_open_tile = 0x00
+        self.chunk_tile_choices = []
+        self.rooms_max_size_bytes = -1
+        self.map_start_address = -1
+        self.num_rooms = -1
+        self.min_room_size = -1
+        self.min_distance_between_rooms = -1
+        self.min_room_y = -1
+        self.max_size_bytes = -1
+        self.get_valid_func = None
+        # List of RoomPlacements. They will be processed in order of size, largest first
+        self.room_placements = []
+        self.chunks_must_change_walkable = False
+        self.make_chunk_func = None
+        self.non_walkable_area_placements = []
+        self.non_walkable_area_placements_room_id = 0
+        
+def RandomlyGenerateMultiRoomDungeonMap(params, filebytes):
+    verbose = False
+
+    map_success = False
+    while not map_success:
+        if verbose:
+            print("    map pass...")
+        map_success = True
+        map_cols = [[params.backing_tile for y in range(0, MAP_Y_MAX + 1)] for x in range(0, MAP_X_MAX + 1)]
+        chunks = []
+        prev_map_cols = []
+        if params.chunks_must_change_walkable:
+            prev_map_cols = [[params.backing_tile for y in range(0, MAP_Y_MAX + 1)] for x in range(0, MAP_X_MAX + 1)]
+        
+        # map fill tile backing
+        new_chunk = MapChunk()
+        new_chunk.Init(params.map_fill_tile, params.map_fill_tile, MapChunkType.CHECK, 0, 0, MAP_X_MAX, MAP_Y_MAX)
+        chunks.append(new_chunk)
+        SanityCheckChunks(chunks)
+        
+        # place initial room rectangles
+        num_prev_chunks = len(chunks)
+        patches = []
+        valid = False
+        while not valid:
+            valid = True
+            patches = []
+            chunks = chunks[:num_prev_chunks]
+            for room_idx in range(0, params.num_rooms):
+                tile = params.room_open_tile
+                new_chunk = MapChunk()
+                new_chunk.Init(tile, tile, MapChunkType.CHECK, 0, 0, params.min_room_size, params.min_room_size)
+                new_chunk.x_pos = random.randrange(0, MAP_X_MAX - params.min_room_size)
+                new_chunk.y_pos = random.randrange(params.min_room_y, MAP_Y_MAX - params.min_room_size)
+                chunks.append(new_chunk)
+                SanityCheckChunks(chunks)
+                EvaluateMap(map_cols, chunks, params.backing_tile)
+                patches = GetWalkablePatches(map_cols, params.walkable_tiles)
+                if len(patches) != (room_idx + 1):
+                    valid = False
+                    break
+            if valid:
+                valid = params.get_valid_func(patches)
+            
+        if verbose:
+            print("  placed initial rectangles")
+        
+        num_prev_chunks = len(chunks)
+        
+        successful_changes = 0
+        
+        total_size = 1 + sum([GetMapChunkSize(c.pattern) for c in chunks])
+        while total_size < (params.rooms_max_size_bytes - 6):
+            num_prev_chunks = len(chunks)
+            if params.chunks_must_change_walkable:
+                EvaluateMap(prev_map_cols, chunks, params.backing_tile)
+            
+            # add a chunk
+            if params.make_chunk_func != None:
+                new_chunk = params.make_chunk_func()
+                chunks.append(new_chunk)
+            else:
+                tile = random.choice(params.chunk_tile_choices)
+                new_chunk = MapChunk()
+                chunk_type = MapChunkType.CHECK
+                if random.randrange(2) == 0:
+                    chunk_type = MapChunkType.RING
+                new_chunk.Init(tile, tile, chunk_type, 0, 0, 0, 0)
+                new_chunk.x_pos = random.randrange(0, MAP_X_MAX - 1)
+                new_chunk.y_pos = random.randrange(0, MAP_Y_MAX - 1)
+                new_chunk.x_size = random.randrange(1, min(int(0.5 * MAP_X_MAX), MAP_X_MAX - new_chunk.x_pos))
+                new_chunk.y_size = random.randrange(1, min(int(0.5 * MAP_Y_MAX), MAP_Y_MAX - new_chunk.y_pos))
+                chunks.append(new_chunk)
+            SanityCheckChunks(chunks)
+
+            EvaluateMap(map_cols, chunks, params.backing_tile)
+            patches = GetWalkablePatches(map_cols, params.walkable_tiles)
+                
+            # check criteria
+            valid = params.get_valid_func(patches)
+            if valid and params.chunks_must_change_walkable:
+                valid = not GetMapsWalkabilitySame(map_cols, prev_map_cols, params.walkable_tiles, new_chunk.x_pos, new_chunk.y_pos, new_chunk.x_size, new_chunk.y_size)
+            if valid:
+                RemoveIneffectiveChunks(chunks, params.backing_tile)
+            else:
+                chunks = chunks[:num_prev_chunks]
+            
+            total_size = 1 + sum([GetMapChunkSize(c.pattern) for c in chunks])
+            
+        if verbose:
+            print("  created map structure")
+
+        # sort walkable patches by size
+        patch_indices = list(range(0, len(patches)))
+        patch_indices.sort(key=lambda patch_idx: len(patches[patch_idx]), reverse=True)
+        
+        # place elements
+        num_prev_chunks = len(chunks)
+        placement_success = False
+        placement_attempts = 0
+        
+        while (not placement_success) and (placement_attempts < 50):
+            if verbose:
+                print("  placement attempt", placement_attempts)
+            placement_success = True
+            placement_attempts += 1
+            chunks = chunks[:num_prev_chunks]
+            for rp in range(0, len(params.room_placements)):
+                params.room_placements[rp].remaining_cells = list(patches[patch_indices[rp]])
+            
+            num_patches = len(patches)
+
+            for room in params.room_placements:
+                # print("    room with", len(room.room_entrance_placements), "placements", room.remaining_cells)
+                placed_items = []
+                for room_entrance_placement in room.room_entrance_placements:
+                    # print("      placement with non_walkable_tiles", room_entrance_placement.non_walkable_tiles)
+                    valid_cells = []
+                    for cell_idx in range(0, len(room.remaining_cells)):
+                        cell = room.remaining_cells[cell_idx]
+                        valid = True
+                        if valid:
+                            for chunk in room_entrance_placement.chunks:
+                                x = chunk.x_pos + cell[0]
+                                y = chunk.y_pos + cell[1]
+                                if (x < 0) or (x > MAP_X_MAX) or (y < 0) or (y > MAP_Y_MAX):
+                                    # print("              invalid x", hex(x), "or y", hex(y), "chunk.x_pos", chunk.x_pos, "chunk.y_pos", chunk.y_pos, "cell[0]", cell[0], "cell[1]", cell[1])
+                                    valid = False
+                                    break
+                                if (x + chunk.x_size > MAP_X_MAX) or (y + chunk.y_size > MAP_Y_MAX):
+                                    # print("              invalid size")
+                                    valid = False
+                                    break
+                        for tile_offset in room_entrance_placement.non_walkable_tiles:
+                            x = cell[0] + tile_offset[0]
+                            y = cell[1] + tile_offset[1]
+                            if (x <= MAP_X_MAX) and (y <= MAP_Y_MAX):
+                                if map_cols[x][y] in params.walkable_tiles:
+                                    # print("              invalid non_walkable_tiles")
+                                    valid = False
+                                    break
+                        if valid:
+                            valid_cells.append(cell)
+                            
+                    if len(valid_cells) == 0:
+                        # print("       failed to place entrance!")
+                        placement_success = False
+                        break
+
+                    # print("       placed entrance ")
+                        
+                    # sort valid cells by distance from items placed already
+                    valid_cells.sort(key=lambda cell:(sum([GetDistanceBetweenCells(cell, placed_cell) for placed_cell in placed_items])), reverse=True)
+                    if len(valid_cells) > 2:
+                        # discard half of the valid cells which are closest to items placed already
+                        valid_cells = valid_cells[:int(len(valid_cells) / 2)]
+                    # choose from one of the remaining valid cells
+                    cell = random.choice(valid_cells)
+
+                    if room_entrance_placement.write_exit:
+                        one_way_exit = [room_entrance_placement.exit_addr, room.room_id, cell[0] + room_entrance_placement.exit_offset[0], cell[1] + room_entrance_placement.exit_offset[1]]
+                        WriteOneWayExits(filebytes, [one_way_exit])
+                    for npc_addr in room_entrance_placement.exit_npc_pos_start_addr:
+                        filebytes[npc_addr] = cell[0] + room_entrance_placement.exit_npc_pos_offset[0]
+                        filebytes[npc_addr + 1] = cell[1] + room_entrance_placement.exit_npc_pos_offset[1]
+                    room.remaining_cells.remove(cell)
+                    for orig_chunk in room_entrance_placement.chunks:
+                        new_chunk = orig_chunk.MakeCopy()
+                        new_chunk.x_pos += cell[0]
+                        new_chunk.y_pos += cell[1]
+                        chunks.append(new_chunk)
+                    SanityCheckChunks(chunks)
+                    placed_items.append(cell)
+                    EvaluateMap(map_cols, chunks, params.backing_tile)
+                    
+                if not placement_success:
+                    break
+                        
+                for npc_placement in room.room_npc_placements:
+                    valid_cells = []
+                    for cell_idx in range(0, len(room.remaining_cells)):
+                        cell = room.remaining_cells[cell_idx]
+                        if all([[cell[0] + required_cell[0], cell[1] + required_cell[1]] in room.remaining_cells for required_cell in npc_placement.required_cells]):
+                            valid_cells.append(cell)
+                            
+                    if len(valid_cells) == 0:
+                        # print("       failed to place npc!")
+                        placement_success = False
+                        break
+                        
+                    # sort valid cells by distance from items placed already
+                    valid_cells.sort(key=lambda cell:(sum([GetDistanceBetweenCells(cell, placed_cell) for placed_cell in placed_items])), reverse=True)
+                    if len(valid_cells) > 2:
+                        # discard half of the valid cells which are closest to items placed already
+                        valid_cells = valid_cells[:int(len(valid_cells) / 2)]
+                    # choose from one of the remaining valid cells
+                    cell = random.choice(valid_cells)
+
+                    filebytes[npc_placement.pos_start_addr] = cell[0]
+                    filebytes[npc_placement.pos_start_addr+1] = cell[1]
+                    for required_cell in npc_placement.required_cells:
+                        room.remaining_cells.remove([cell[0] + required_cell[0], cell[1] + required_cell[1]])
+                    placed_items.append(cell)
+                    
+                if not placement_success:
+                    break
+                    
+            if placement_success:
+                EvaluateMap(map_cols, chunks, params.backing_tile)
+                for placement in params.non_walkable_area_placements:
+                    valid_cells = []
+                    for x in range(0, MAP_X_MAX + 1):
+                        for y in range(0, MAP_Y_MAX + 1):
+                            valid = True
+                            for tile_offset in placement.non_walkable_tiles:
+                                tile_x = x + tile_offset[0]
+                                tile_y = x + tile_offset[1]
+                                if (tile_x >= 0) and (tile_x <= MAP_X_MAX) and (tile_y >= 0) and (tile_y <= MAP_Y_MAX):
+                                    if map_cols[tile_x][tile_y] in params.walkable_tiles:
+                                        valid = False
+                                        break
+                            if valid:
+                                for chunk in placement.chunks:
+                                    tile_x = chunk.x_pos + x
+                                    tile_y = chunk.y_pos + y
+                                    if (tile_x < 0) or (tile_x > MAP_X_MAX) or (tile_y < 0) or (tile_y > MAP_Y_MAX):
+                                        # print("              invalid x", hex(x), "or y", hex(y), "chunk.x_pos", chunk.x_pos, "chunk.y_pos", chunk.y_pos, "cell[0]", cell[0], "cell[1]", cell[1])
+                                        valid = False
+                                        break
+                                    if (tile_x + chunk.x_size > MAP_X_MAX) or (tile_y + chunk.y_size > MAP_Y_MAX):
+                                        # print("              invalid size")
+                                        valid = False
+                                        break
+                            if valid:
+                                valid_cells.append([x, y])
+                    
+                    if len(valid_cells) == 0:
+                        # print("    failed to place non_walkable_area_placement!")
+                        placement_success = False
+                        break
+                        
+                    if len(valid_cells) > 0:
+                        cell = random.choice(valid_cells)
+                        for orig_chunk in placement.chunks:
+                            new_chunk = orig_chunk.MakeCopy()
+                            new_chunk.x_pos += cell[0]
+                            new_chunk.y_pos += cell[1]
+                            chunks.append(new_chunk)
+                        SanityCheckChunks(chunks)
+                        EvaluateMap(map_cols, chunks, params.backing_tile)
+                        
+                        if placement.write_exit:
+                            room_id = params.non_walkable_area_placements_room_id
+                            one_way_exit = [placement.exit_addr, room_id, cell[0] + placement.exit_offset[0], cell[1] + placement.exit_offset[1]]
+                            WriteOneWayExits(filebytes, [one_way_exit])
+
+                        
+            # sanity check total size
+            total_size = 1 + sum([GetMapChunkSize(c.pattern) for c in chunks])
+            if total_size > params.max_size_bytes:
+                # print("       map too big!", total_size)
+                placement_success = False
+                
+            # check get_valid_func again
+            patches = GetWalkablePatches(map_cols, params.walkable_tiles)
+            if not params.get_valid_func(patches):
+                # print("       get_valid_func failed!")
+                placement_success = False
+             
+        if verbose:
+            print("  placement_success:", placement_success)
+
+        if not placement_success:
+            map_success = False
+            
+        if map_success:
+            # sanity check total size
+            total_size = 1 + sum([GetMapChunkSize(c.pattern) for c in chunks])
+            if total_size > params.max_size_bytes:
+                if verbose:
+                    print("       map too big!", total_size)
+                map_success = False
+
+        if map_success:
+            # check get_valid_func again
+            patches = GetWalkablePatches(map_cols, params.walkable_tiles)
+            if not params.get_valid_func(patches):
+                if verbose:
+                    print("       get_valid_func failed!")
+                map_success = False
+
+        # WriteMapChunks(filebytes, chunks, params.map_start_address)
+        # WriteBytesToFile(filebytes, r"D:\_downloads\_emu\hacking\hacked_roms\TEMP_FFL.gb")
+            
+    WriteMapChunks(filebytes, chunks, params.map_start_address)
+    
+    return
+    
+def GetMapsWalkabilitySame(map_cols_a, map_cols_b, walkable_tiles, x_start, y_start, x_size, y_size):
+    for x in range(x_start, (x_start + x_size + 1)):
+        for y in range(y_start, (y_start + y_size + 1)):
+            if (map_cols_a[x][y] in walkable_tiles) != (map_cols_b[x][y] in walkable_tiles):
+                return False
+    return True
+    
+def RandomlyGenerateBanditCaveMap(filebytes):
+
+    params = MultiRoomDungeonParams()
+    
+    params.walkable_tiles = [0x02, 0x03, 0x04, 0x05, 0x16, 0x18, 0x19, 0x1a, 0x1b, 0x1d]
+    params.map_fill_tile = 0x00
+    params.backing_tile = 0x1e # black square
+    params.room_open_tile = 0x1d # green (open)
+    params.chunk_tile_choices = ([0x1d] * 5) + [0x18] + ([0x00] * 5) # either green (open), light rock (open), or light rock (block)
+    params.rooms_max_size_bytes = 140
+    params.map_start_address = 0xcfa0
+    params.num_rooms = 5
+    params.min_room_size = 9
+    params.min_distance_between_rooms = 6
+    params.min_room_y = 6
+    params.max_size_bytes = 190
+    
+    def GetBanditCaveValid(patches):
+        if not len(patches) == params.num_rooms:
+            return False
+        if not all([len(patch) >= 20 for patch in patches]):
+            return False
+        for patch in patches:
+            if any([cell[1] < params.min_room_y for cell in patch]):
+                return False
+        if not GetAllPatchesAreDistanceApart(patches, params.min_distance_between_rooms):
+            return False
+        for patch in patches:
+            if ApproxCountNonOverlappingRegionsInPatch(patch, 2, 2) < 3:
+                return False
+        return True
+        
+    params.get_valid_func = GetBanditCaveValid
+    
+    # define data
+    
+    room_placements = []
+    
+    # define the three one-way rooms
+    empty_room_placement = RoomEntrancePlacement()
+    empty_room_placement.non_walkable_tiles = [[0, -1], [-1, -1], [1, -1], [0, -2], [-1, -2], [1, -2]]
+    empty_room_placement.chunks = []
+    new_chunk = MapChunk()
+    new_chunk.Init(0x12, 0x12, MapChunkType.SQUARE, 0, -2, 1, 2)
+    empty_room_placement.chunks.append(new_chunk)
+    treasure_room_placement = MakeDoorEntrancePlacement(0x0f, 0x12)
+    bandit_chief_room_placement = MakeDoorEntrancePlacement(0x11, 0x12)
+
+    # one of the rooms will be locked - decide which
+    # (can't be chief's room, as defeating the chief unlocks the locked room)
+    cave_2_locked_room = treasure_room_placement
+    remaining_rooms = [empty_room_placement, bandit_chief_room_placement]
+    if random.randrange(0, 2) == 0:
+        cave_2_locked_room = empty_room_placement
+        remaining_rooms = [treasure_room_placement, bandit_chief_room_placement]
+    
+    ######################################################################################
+    # bandit cave 1
+    rp = RoomPlacement()
+    rp.room_id = 0x5e
+    
+    # exit from bandit cave 1 back to the surface
+    rp.room_entrance_placements.append(MakeStairsUpEntrancePlacement(0x07, 0x1e, 0x0ff))
+    
+    # exits from bandit cave 1 to remaining rooms
+    for i in range(len(remaining_rooms) - 1, -1, -1):
+        if random.randrange(0, 2) == 0:
+            rp.room_entrance_placements.append(remaining_rooms[i])
+            del(remaining_rooms[i])
+    
+    # exit from bandit cave 1 to bandit cave 2
+    rep = RoomEntrancePlacement()
+    rep.non_walkable_tiles = [[0, 1], [-1, 1], [1, 1], [0, 2], [-1, 2], [1, 2]]
+    rep.chunks = []
+    new_chunk = MapChunk()
+    new_chunk.Init(0x0a, 0x0a, MapChunkType.TILE, 0, 1, 1, 1)
+    rep.chunks.append(new_chunk)
+    rep.write_exit = True
+    rep.exit_addr = 0x112
+    rep.exit_offset = [0, 0]
+    rp.room_entrance_placements.append(rep)
+    
+    # npc 0
+    rnp = RoomNPCPlacement()
+    rnp.required_cells = [[0, 0], [0, 1], [1, 0], [1, 1]]
+    rnp.pos_start_addr = 0xa894
+    rp.room_npc_placements.append(rnp)
+    
+    # npc 1
+    rnp = RoomNPCPlacement()
+    rnp.required_cells = [[0, 0], [0, 1], [1, 0], [1, 1]]
+    rnp.pos_start_addr = 0xa89b
+    rp.room_npc_placements.append(rnp)
+    
+    room_placements.append(rp)
+
+    ######################################################################################
+    # bandit cave 2
+    rp = RoomPlacement()
+    rp.room_id = 0x5f
+    
+    # exit from bandit cave 2 back to bandit cave 1
+    rp.room_entrance_placements.append(MakeStairsUpEntrancePlacement(0x09, 0x1e, 0x10f))
+    
+    # exit from bandit cave 1 to remaining rooms
+    for room in remaining_rooms:
+        rp.room_entrance_placements.append(room)
+    
+    # exit from bandit cave 2 to locked room (either empty room or treasure room)
+    rep = cave_2_locked_room
+    rep.exit_npc_pos_offset = [0, -1]
+    rep.exit_npc_pos_start_addr.append(0xa8ab) # "won't open" message
+    rp.room_entrance_placements.append(rep)
+    
+    # npc 0
+    rnp = RoomNPCPlacement()
+    rnp.required_cells = [[0, 0], [0, 1], [1, 0], [1, 1]]
+    rnp.pos_start_addr = 0xa8a4
+    rp.room_npc_placements.append(rnp)
+    
+    room_placements.append(rp)
+    
+    ######################################################################################
+    # bandit treasure room
+    rp = RoomPlacement()
+    rp.room_id = 0x61
+    
+    # warp back door from bandit treasure room
+    rp.room_entrance_placements.append(MakeWarpBackDoorEntrancePlacement(0x12, 0x111))
+    
+    # npc 0 (chest)
+    rnp = RoomNPCPlacement()
+    rnp.required_cells = [[0, 0], [-1, 0], [1, 0], [0, 1], [-1, 1], [1, 1]]
+    rnp.pos_start_addr = 0xa8bd
+    rp.room_npc_placements.append(rnp)
+    
+    # npc 1 (chest)
+    rnp = RoomNPCPlacement()
+    rnp.required_cells = [[0, 0], [-1, 0], [1, 0], [0, 1], [-1, 1], [1, 1]]
+    rnp.pos_start_addr = 0xa8c4
+    rp.room_npc_placements.append(rnp)
+
+    # npc 2 (chest)
+    rnp = RoomNPCPlacement()
+    rnp.required_cells = [[0, 0], [-1, 0], [1, 0], [0, 1], [-1, 1], [1, 1]]
+    rnp.pos_start_addr = 0xa8cb
+    rp.room_npc_placements.append(rnp)
+
+    room_placements.append(rp)
+
+    ######################################################################################
+    # bandit chief's room
+    rp = RoomPlacement()
+    rp.room_id = 0x60
+    
+    # warp back door from bandit chief's room
+    rp.room_entrance_placements.append(MakeWarpBackDoorEntrancePlacement(0x12, 0x113))
+    
+    # npc 0
+    rnp = RoomNPCPlacement()
+    rnp.required_cells = [[0, 0], [-1, 0], [1, 0], [0, 1], [-1, 1], [1, 1]]
+    rnp.pos_start_addr = 0xa8b4
+    rp.room_npc_placements.append(rnp)
+    
+    room_placements.append(rp)
+    
+    ######################################################################################
+    # bandit empty room
+    rp = RoomPlacement()
+    rp.room_id = 0x62
+    
+    room_placements.append(rp)
+    
+    # warp back door from bandit treasure room
+    rp.room_entrance_placements.append(MakeWarpBackDoorEntrancePlacement(0x12, 0x10d))
+    
+    params.room_placements = room_placements
+    
+    RandomlyGenerateMultiRoomDungeonMap(params, filebytes)
+
+    return
+    
+def RandomlyGenerateCastleSwordMap(filebytes):
+
+    params = MultiRoomDungeonParams()
+    
+    params.walkable_tiles = [0x00, 0x03, 0x04, 0x07, 0x0b, 0x0e, 0x0f]
+    params.map_fill_tile = 0x01
+    params.backing_tile = 0x1e # black square
+    params.room_open_tile = 0x03 # grass (open)
+    # tile choices: grass (open), light rock (open), light rock (block)
+    params.chunk_tile_choices = ([0x03] * 5)  + ([0x01] * 5) + [0x04]
+    params.rooms_max_size_bytes = 190
+    params.map_start_address = 0xccd9
+    params.num_rooms = 4
+    params.min_room_size = 9
+    params.min_distance_between_rooms = 6
+    params.min_room_y = 6
+    params.max_size_bytes = 226
+    
+    def GetCastleSwordValid(patches):
+        if not len(patches) == params.num_rooms:
+            return False
+        if not all([len(patch) >= 20 for patch in patches]):
+            return False
+        for patch in patches:
+            if any([cell[1] < params.min_room_y for cell in patch]):
+                return False
+        if not GetAllPatchesAreDistanceApart(patches, params.min_distance_between_rooms):
+            return False
+        for patch in patches:
+            if ApproxCountNonOverlappingRegionsInPatch(patch, 2, 2) < 3:
+                return False
+        return True
+        
+    params.get_valid_func = GetCastleSwordValid
+    
+    # define data
+    
+    room_placements = []
+    
+    ######################################################################################
+    # castle sword 2
+    rp = RoomPlacement()
+    rp.room_id = 0x64
+    
+    # exit from castle sword 2 back to castle sword 1
+    rp.room_entrance_placements.append(MakeStairsDownEntrancePlacement(0x14, 0x115))
+    
+    # exit from castle sword 2 to castle sword 3a
+    rp.room_entrance_placements.append(MakeStairsUpEntrancePlacement(0x11, 0x1e, 0x11a))
+
+    # exit from castle sword 2 to castle sword 3b
+    rp.room_entrance_placements.append(MakeStairsUpEntrancePlacement(0x12, 0x1e, 0x119))
+
+    # npcs 0-2
+    for npc_addr in [0xa8e3, 0xa8e9, 0xa8ec]:
+        rnp = RoomNPCPlacement()
+        rnp.required_cells = [[0, 0], [0, 1], [1, 0], [1, 1]]
+        rnp.pos_start_addr = npc_addr
+        rp.room_npc_placements.append(rnp)
+    
+    room_placements.append(rp)
+
+    ######################################################################################
+    # castle sword 1
+    rp = RoomPlacement()
+    rp.room_id = 0x63
+    
+    # exit from castle sword 1 back to the surface
+    rep = RoomEntrancePlacement()
+    rep.non_walkable_tiles = [[0, 1], [-1, 1], [1, 1], [0, 2], [-1, 2], [1, 2]]
+    rep.chunks = []
+    new_chunk = MapChunk()
+    new_chunk.Init(0x05, 0x05, MapChunkType.TILE, 0, 1, 1, 1)
+    rep.chunks.append(new_chunk)
+    rep.write_exit = True
+    rep.exit_addr = 0x0fc
+    rep.exit_offset = [0, 0]
+    rp.room_entrance_placements.append(rep)
+    
+    # exit from castle sword 1 to castle sword 2
+    rp.room_entrance_placements.append(MakeStairsUpEntrancePlacement(0x11, 0x1e, 0x118))
+    
+    # npcs 0-2
+    for npc_addr in [0xa8d4, 0xa8da, 0xa8dd]:
+        rnp = RoomNPCPlacement()
+        rnp.required_cells = [[0, 0], [0, 1], [1, 0], [1, 1]]
+        rnp.pos_start_addr = npc_addr
+        rp.room_npc_placements.append(rnp)
+    
+    room_placements.append(rp)
+
+    ######################################################################################
+    # castle sword 3a
+    rp = RoomPlacement()
+    rp.room_id = 0x65
+    
+    # exit from castle sword 3a back to castle sword 2
+    rp.room_entrance_placements.append(MakeStairsDownEntrancePlacement(0x15, 0x116))
+    
+    room_placements.append(rp)
+
+    ######################################################################################
+    # castle sword 3b
+    rp = RoomPlacement()
+    rp.room_id = 0x65
+    
+    # exit from castle sword 3b back to castle sword 2
+    rp.room_entrance_placements.append(MakeStairsDownEntrancePlacement(0x14, 0x117))
+    
+    # npc (kingswrd)
+    rnp = RoomNPCPlacement()
+    rnp.required_cells = [[0, 0], [0, 1], [1, 0], [1, 1]]
+    rnp.pos_start_addr = 0xa8f2
+    rp.room_npc_placements.append(rnp)
+    
+    room_placements.append(rp)
+
+    params.room_placements = room_placements
+    
+    RandomlyGenerateMultiRoomDungeonMap(params, filebytes)
+    
+    # copy position from kingswrd (alive) npc to kingswrd (dead) npc
+    filebytes[0xa8f9] = filebytes[0xa8f2]
+    filebytes[0xa8fa] = filebytes[0xa8f3]
+
+    return
+
+def RandomlyGenerateTower2FMap(filebytes):
+    entrances = [[0x0a, 0x0bc, 0x017], [0x0c, 0x001, 0x018]]
+    clone_exits = [0x001, 0x0bb]
+    return RandomlyGenerateTowerRoomMap(filebytes, 0xddbf, 84, 0x02, entrances, clone_exits)
+    
+def RandomlyGenerateTower3FMap(filebytes):
+    entrances = [[0x0a, 0x0bd, 0x035], [0x0c, 0x002, 0x036], [0x0e, 0x0e9, 0x037]]
+    clone_exits = [0x002, 0x0be]
+    return RandomlyGenerateTowerRoomMap(filebytes, 0xde13, 53, 0x03, entrances, clone_exits)
+    
+def RandomlyGenerateTower4FMap(filebytes):
+    entrances = [[0x0a, 0x0c0, 0x058], [0x0c, 0x003, 0x059], [0x0e, 0x0ea, 0x05a]]
+    clone_exits = [0x003, 0x0bf]
+    return RandomlyGenerateTowerRoomMap(filebytes, 0xde48, 96, 0x04, entrances, clone_exits)
+
+def RandomlyGenerateFirstTowerSection(filebytes):
+    # Randomly generate tower rooms
+    room2f = RandomlyGenerateTower2FMap(filebytes)
+    room3f = RandomlyGenerateTower3FMap(filebytes)
+    room4f = RandomlyGenerateTower4FMap(filebytes)
+    room5f = RandomlyGenerateTower5FMap(filebytes)
+
+    # Randomize connections between tower rooms
+    first_room = [[0xbb, 0x30, 0x15, 0x0d]]
+    remaining_rooms = [room2f, room3f, room4f, room5f, \
+        [[0x0bc, 0x31, 0x15, 0x14], [0x0bd, 0x31, 0x15, 0x0D]], \
+        [[0x0be, 0x32, 0x15, 0x14], [0x0bf, 0x32, 0x15, 0x0D]], \
+        [[0x0c0, 0x33, 0x15, 0x14], [0x0c1, 0x33, 0x15, 0x0D]], \
+        [[0x0e9, 0x4a, 0x0d, 0x12]], \
+        [[0x0ea, 0x4B, 0x09, 0x10]] \
+        ]
+        
+    RandomizeTowerSection(filebytes, first_room, remaining_rooms)
+
+    return
+
+# Format for entrances: [0] top tile id, [1] return exit address, [2] outward exit address
+# Format for clone_exits: source exit address, destination exit address
+def RandomlyGenerateTowerRoomMap(filebytes, map_start_address, max_size_bytes, room_id, entrances, clone_exits):
+    params = MakeTowerRoomParams()
+    params.rooms_max_size_bytes = max_size_bytes - (1 + (5 * len(entrances)))
+    params.map_start_address = map_start_address
+    params.max_size_bytes = max_size_bytes
+    room_placements = []
+    rp = RoomPlacement()
+    rp.room_id = room_id
+    for entrance in entrances:
+        rp.room_entrance_placements.append(MakeOnePieceDoorEntrancePlacement(entrance[0], entrance[1]))
+    if random.randrange(0, 5) == 0:
+        # Recovery spring
+        rp.room_entrance_placements.append(MakeSingleTilePlacement(0x1b))
+    room_placements.append(rp)
+    params.room_placements = room_placements
+    
+    RandomlyGenerateMultiRoomDungeonMap(params, filebytes)
+    
+    exit_pos = GetExitPosition(filebytes, clone_exits[0])
+    SetExitPosition(filebytes, clone_exits[1], exit_pos[0], exit_pos[1])
+    
+    # Read back exit positions and return exit data in "room" format for exit connection randomization
+    exits = [GetExitPosition(filebytes, entrance[1]) for entrance in entrances]
+    room_format_data = []
+    for i in range(0, len(entrances)):
+        room_format_data.append([entrances[i][2], room_id, exits[i][0], exits[i][1]])
+    return room_format_data
+
+def RandomlyGenerateTower5FMap(filebytes):
+    map_start_address = 0xdea8
+    max_size_bytes = 64
+    room_id = 0x05
+    crystal_door_entrance = [[0x0a, 0x0c2, 0x05b]]
+    entrances = [[0x0c, 0x0c1, 0x05c]]
+    non_return_data_entrances = [[0x0e, 0x11b, 0x05d]] # data for this entrance won't be returned from this function
+    clone_exits = [0x0c1, 0x004]
+    params = MakeTowerRoomParams()
+    params.rooms_max_size_bytes = max_size_bytes - 21
+    params.map_start_address = map_start_address
+    params.max_size_bytes = max_size_bytes
+    
+    room_placements = []
+    rp = RoomPlacement()
+    rp.room_id = room_id
+    for entrance in entrances:
+        rp.room_entrance_placements.append(MakeOnePieceDoorEntrancePlacement(entrance[0], entrance[1]))
+    for entrance in non_return_data_entrances:
+        rp.room_entrance_placements.append(MakeOnePieceDoorEntrancePlacement(entrance[0], entrance[1]))
+    if random.randrange(0, 5) == 0:
+        # Recovery spring
+        rp.room_entrance_placements.append(MakeSingleTilePlacement(0x1b))
+    rp.room_entrance_placements.append(MakeCrystalDoorEntrancePlacement(0x0a, 0x15, 0x0c2, 0xa3aa))
+    
+    # npc (creator)
+    rnp = RoomNPCPlacement()
+    rnp.required_cells = [[0, 0], [0, 1], [1, 0], [1, 1]]
+    rnp.pos_start_addr = 0xa3b1
+    rp.room_npc_placements.append(rnp)
+    
+    room_placements.append(rp)
+
+    params.room_placements = room_placements
+    
+    RandomlyGenerateMultiRoomDungeonMap(params, filebytes)
+    
+    exit_pos = GetExitPosition(filebytes, clone_exits[0])
+    SetExitPosition(filebytes, clone_exits[1], exit_pos[0], exit_pos[1])
+    
+    # Read back exit positions and return exit data in "room" format for exit connection randomization
+    exits = [GetExitPosition(filebytes, entrance[1]) for entrance in entrances]
+    room_format_data = []
+    for i in range(0, len(entrances)):
+        room_format_data.append([entrances[i][2], room_id, exits[i][0], exits[i][1]])
+    return room_format_data
+
+def RandomlyGenerateOceanMap(filebytes):
+
+    params = MultiRoomDungeonParams()
+    
+    params.walkable_tiles = [0x01, 0x03, 0x04, 0x06, 0x07, 0x09, 0x0c, 0x0f, 0x11]
+    params.map_fill_tile = 0x00 # ocean (island)
+    params.backing_tile = 0x1e # jagged
+    params.room_open_tile = random.choice([0x06, 0x0c, 0x0f, 0x11])
+    params.chunk_tile_choices = [0x00, 0x01, 0x06, 0x0c, 0x0f, 0x11]
+    params.rooms_max_size_bytes = 270
+    params.map_start_address = 0xc148
+    params.num_rooms = 17
+    params.min_room_size = 4
+    params.min_distance_between_rooms = 3
+    params.min_room_y = 6
+    params.max_size_bytes = 319
+    
+    def GetOceanValid(patches):
+        if len(patches) != params.num_rooms:
+            return False
+        for patch in patches:
+            if any([cell[1] < params.min_room_y for cell in patch]):
+                return False
+        if any([len(patch) < 2 for patch in patches]):
+            return False
+        if not GetAllPatchesAreDistanceApart(patches, params.min_distance_between_rooms):
+            return False
+        for patch in patches:
+            bb = GetPatchBoundingBox(patch)
+            sides = [1+(bb[1][0]-bb[0][0]), 1+(bb[1][1]-bb[0][1])]
+            if max(sides) / min(sides) > 2: # aspect ratio no greater than 2:1
+                return False
+        return True
+        
+    params.get_valid_func = GetOceanValid
+
+    def MakeChunk():
+        if random.randrange(0, 2) == 0:
+            # random patch
+            tile = random.choice(params.chunk_tile_choices)
+            new_chunk = MapChunk()
+            chunk_type = MapChunkType.CHECK
+            new_chunk.Init(tile, tile, chunk_type, 0, 0, 0, 0)
+            new_chunk.x_pos = random.randrange(0, MAP_X_MAX - 1)
+            new_chunk.y_pos = random.randrange(0, MAP_Y_MAX - 1)
+            new_chunk.x_size = random.randrange(1, min(int(0.5 * MAP_X_MAX), MAP_X_MAX - new_chunk.x_pos))
+            new_chunk.y_size = random.randrange(1, min(int(0.5 * MAP_Y_MAX), MAP_Y_MAX - new_chunk.y_pos))
+            return new_chunk
+        else:
+            # single tile floating island
+            new_chunk = MapChunk()
+            new_chunk.Init(0x03, 0x03, MapChunkType.TILE, 0, 0, 1, 1)
+            new_chunk.x_pos = random.randrange(1, MAP_X_MAX - 1)
+            new_chunk.y_pos = random.randrange(params.min_room_y, MAP_Y_MAX - 1)
+            return new_chunk
+            
+    params.make_chunk_func = MakeChunk
+    
+    # define data
+    
+    room_placements = []
+    
+    ######################################################################################
+    # tower, town, cave
+    rp = RoomPlacement()
+    rp.room_id = 0x66
+    rep = RoomEntrancePlacement()
+    new_chunk = MapChunk()
+    new_chunk.Init(0x0a, 0x0b, MapChunkType.SQUARE, 0, -1, 1, 2)
+    rep.chunks.append(new_chunk)
+    rep.write_exit = True
+    rep.exit_addr = 0x5d
+    rp.room_entrance_placements.append(rep)
+    rp.room_entrance_placements.append(MakeSingleTilePlacementWithAddr(0x15, 0x126))
+    rp.room_entrance_placements.append(MakeSingleTilePlacementWithAddr(0x12, 0x125))
+    room_placements.append(rp)    
+    
+    ######################################################################################
+    # airseed palm tree surrounded by forest
+    rp = RoomPlacement()
+    rp.room_id = 0x66
+    rep = RoomEntrancePlacement()
+    for x in range(-1, 1):
+        for y in range(-3, 0):
+            rep.non_walkable_tiles.append([x, y])
+    rep.chunks = []
+    new_chunk = MapChunk()
+    new_chunk.Init(0x1d, 0x1d, MapChunkType.TILE, 0, -2, 1, 1)
+    rep.chunks.append(new_chunk)
+    rep.write_exit = False
+    new_chunk = MapChunk()
+    new_chunk.Init(0x0c, 0x0c, MapChunkType.RING, -1, -3, 3, 3)
+    rep.chunks.append(new_chunk)
+    rp.room_entrance_placements.append(rep)
+    room_placements.append(rp)
+
+    ######################################################################################
+    # cave, cave (connection between cave system 1 and cave system 2)
+    rp = RoomPlacement()
+    rp.room_id = 0x66
+    rp.room_entrance_placements.append(MakeSingleTilePlacementWithAddr(0x19, 0x12a))
+    rp.room_entrance_placements.append(MakeSingleTilePlacementWithAddr(0x17, 0x128))
+    room_placements.append(rp)
+
+    ######################################################################################
+    # islands with caves: randomise which islands the caves appear on
+
+    room_placements_with_random_caves = []
+    remaining_caves = []
+    remaining_caves.append(MakeSingleTilePlacementWithAddr(0x1b, 0x12c))
+    remaining_caves.append(MakeSingleTilePlacementWithAddr(0x16, 0x127))
+    remaining_caves.append(MakeSingleTilePlacementWithAddr(0x1a, 0x12b))
+    remaining_caves.append(MakeSingleTilePlacementWithAddr(0x18, 0x129))
+    remaining_caves.append(MakeSingleTilePlacementWithAddr(0x1c, 0x12d))
+    
+    for i in range(0, 4):
+        rp = RoomPlacement()
+        rp.room_id = 0x66
+        room_placements_with_random_caves.append(rp)
+
+    ######################################################################################
+    # island vehicle
+    rp = RoomPlacement()
+    rp.room_id = 0x66
+    rep = RoomEntrancePlacement()
+    side_pick = random.randrange(4)
+    if side_pick == 0:
+        rep.non_walkable_tiles.append([-1, 0])
+    if side_pick == 1:
+        rep.non_walkable_tiles.append([1, 0])
+    if side_pick == 2:
+        rep.non_walkable_tiles.append([0, -1])
+    if side_pick == 3:
+        rep.non_walkable_tiles.append([0, 1])
+    new_chunk = MapChunk()
+    new_chunk.Init(0x1f, 0x1f, MapChunkType.TILE, 0, 0, 1, 1) #island vehicle
+    rep.chunks.append(new_chunk)
+    rp.room_entrance_placements.append(rep)
+    # add a random remaining cave
+    cave_choice = random.choice(remaining_caves)
+    rp.room_entrance_placements.append(cave_choice)
+    remaining_caves.remove(cave_choice)
+    room_placements.append(rp)
+    
+    for cave in remaining_caves:
+        rp = random.choice(room_placements_with_random_caves)
+        rp.room_entrance_placements.append(cave)
+        
+    for rp in room_placements_with_random_caves:
+        if len(rp.room_entrance_placements) > 0:
+            room_placements.append(rp)
+
+    ######################################################################################
+    # town
+    rp = RoomPlacement()
+    rp.room_id = 0x66
+    rp.room_entrance_placements.append(MakeSingleTilePlacementWithAddr(0x13, 0x12e))
+    room_placements.append(rp)
+
+    ######################################################################################
+    # hut
+    rp = RoomPlacement()
+    rp.room_id = 0x66
+    rp.room_entrance_placements.append(MakeSingleTilePlacementWithAddr(0x14, 0x12f))
+    room_placements.append(rp)
+
+    params.room_placements = room_placements
+    
+    ######################################################################################
+    # whirlpool
+    whirlpool_placement = MakeSingleTilePlacementWithAddr(0x0e, 0x130)
+    whirlpool_placement.non_walkable_tiles = [[-1, -1], [-1, 0], [-1, 1], [0, -1], [0, 0], [0, 1], [1, -1], [1, 0], [1, 1]]
+    whirlpool_placement.exit_offset = [0, 1]
+    params.non_walkable_area_placements.append(whirlpool_placement)
+    params.non_walkable_area_placements_room_id = 0x66
+    
+    RandomlyGenerateMultiRoomDungeonMap(params, filebytes)
+
+    return
+
+def MakeTowerRoomParams():
+    params = MultiRoomDungeonParams()
+    
+    params.walkable_tiles = [0x09, 0x16, 0x18, 0x19, 0x1a, 0x1d]
+    params.map_fill_tile = 0x01 # med brick
+    params.backing_tile = 0x1e # light block
+    params.room_open_tile = 0x1a
+    # tile choices: 
+    params.chunk_tile_choices = ([0x01] * 5) + [0x16] + [0x1a, 0x1d] # bricks, stairs
+    params.num_rooms = 1
+    params.min_room_size = 9
+    params.min_distance_between_rooms = 6
+    params.min_room_y = 6
+    params.chunks_must_change_walkable = True
+    
+    style_pick = random.randrange(0, 5)
+    if style_pick == 1:
+        # grass, 5F-style blocks
+        params.map_fill_tile = 0x03
+        params.room_open_tile = 0x18
+        params.chunk_tile_choices = ([0x03] * 5) + [0x16] + ([0x18] * 3)
+    if style_pick == 2:
+        # girders
+        params.map_fill_tile = 0x07
+        params.room_open_tile = 0x1a
+        params.chunk_tile_choices = ([0x07] * 5) + [0x16] + ([0x1a] * 3)
+    if style_pick == 3:
+        # clouds, stairs, grass
+        params.map_fill_tile = 0x11
+        params.room_open_tile = 0x18
+        params.chunk_tile_choices = ([0x11] * 5) + [0x16] + [0x18, 0x1d]
+    if style_pick == 4:
+        # water, dark stairs
+        params.map_fill_tile = 0x10
+        params.room_open_tile = 0x19
+        params.chunk_tile_choices = ([0x10] * 5) + [0x16] + ([0x19] * 3)
+    
+    def GetTowerRoomValid(patches):
+        if not len(patches) == params.num_rooms:
+            return False
+        if not all([len(patch) >= 20 for patch in patches]):
+            return False
+        return True
+        
+    params.get_valid_func = GetTowerRoomValid
+    
+    return params
+
+class RoomEntrancePlacement:
+    def __init__(self):
+        # list of required non walkable tiles, each of which is a relative cell position, which is a two member list
+        # eg [0, 1] means the tile at [x, y+1] is required to be non-walkable
+        self.non_walkable_tiles = []
+        # list of MapChunks which will be added, each with relative positions
+        self.chunks = []
+        self.write_exit = False
+        # address of exit data which will be written
+        self.exit_addr = 0
+        # x, y offset of exit data
+        self.exit_offset = [0, 0]
+        # x, y offset of npc position
+        self.exit_npc_pos_offset = [0, 0]
+        # start addresses for positions of npcs which need to have the same position as the exit
+        self.exit_npc_pos_start_addr = []
+    
+class RoomNPCPlacement:
+    def __init__(self):
+        # list of cells required to be in the cell list, each of which is a relative cell position, which is a two member list
+        # eg [0, 1] means the tile at [x, y+1] is required to be in the cell list
+        self.required_cells = []
+        # start address for position
+        self.pos_start_addr = 0
+    
+class RoomPlacement:
+    def __init__(self):
+        self.room_id = 0
+        self.remaining_cells = []
+        self.room_entrance_placements = []
+        self.room_npc_placements = []
+    
+def MakeStairsUpEntrancePlacement(stairs_tile, hole_tile, exit_addr):
+    rep = RoomEntrancePlacement()
+    rep.non_walkable_tiles = [[0, -1], [-1, -1], [1, -1], [0, -2], [-1, -2], [1, -2], [0, -3], [-1, -3], [1, -3]]
+    rep.chunks = []
+    new_chunk = MapChunk()
+    new_chunk.Init(stairs_tile, stairs_tile, MapChunkType.TILE, 0, -1, 1, 1)
+    rep.chunks.append(new_chunk)
+    new_chunk = MapChunk()
+    new_chunk.Init(hole_tile, hole_tile, MapChunkType.TILE, 0, -2, 1, 1)
+    rep.chunks.append(new_chunk)
+    rep.write_exit = True
+    rep.exit_addr = exit_addr
+    rep.exit_offset = [0, 0]
+    return rep
+    
+def MakeStairsDownEntrancePlacement(stairs_tile, exit_addr):
+    # exit from bandit cave 1 to bandit cave 2
+    rep = RoomEntrancePlacement()
+    rep.non_walkable_tiles = [[0, 1], [-1, 1], [1, 1], [0, 2], [-1, 2], [1, 2]]
+    rep.chunks = []
+    new_chunk = MapChunk()
+    new_chunk.Init(stairs_tile, stairs_tile, MapChunkType.TILE, 0, 1, 1, 1)
+    rep.chunks.append(new_chunk)
+    rep.write_exit = True
+    rep.exit_addr = exit_addr
+    rep.exit_offset = [0, 0]
+    return rep
+    
+def MakeDoorEntrancePlacement(door_tile, door_bottom_tile):
+    rep = RoomEntrancePlacement()
+    rep.non_walkable_tiles = [[0, -1], [-1, -1], [1, -1], [0, -2], [-1, -2], [1, -2], [0, -3], [-1, -3], [1, -3]]
+    rep.chunks = []
+    new_chunk = MapChunk()
+    new_chunk.Init(door_bottom_tile, door_bottom_tile, MapChunkType.TILE, 0, -2, 1, 1)
+    rep.chunks.append(new_chunk)
+    new_chunk = MapChunk()
+    new_chunk.Init(door_tile, door_tile, MapChunkType.TILE, 0, -1, 1, 1)
+    rep.chunks.append(new_chunk)
+    return rep
+    
+def MakeWarpBackDoorEntrancePlacement(door_bottom_tile, exit_addr):
+    rep = RoomEntrancePlacement()
+    rep.non_walkable_tiles = [[0, 1], [-1, 1], [1, 1], [0, 2], [-1, 2], [1, 2], [0, 3], [-1, 3], [1, 3]]
+    rep.chunks = []
+    new_chunk = MapChunk()
+    new_chunk.Init(door_bottom_tile, door_bottom_tile, MapChunkType.SQUARE, 0, 1, 1, 2)
+    rep.chunks.append(new_chunk)
+    rep.write_exit = True
+    rep.exit_addr = exit_addr
+    rep.exit_offset = [0, 0]
+    return rep
+    
+def MakeOnePieceDoorEntrancePlacement(door_top_tile, exit_addr):
+    rep = RoomEntrancePlacement()
+    rep.non_walkable_tiles = [[0, -1], [-1, -1], [1, -1], [0, -2], [-1, -2], [1, -2], [0, -3], [-1, -3], [1, -3]]
+    rep.chunks = []
+    new_chunk = MapChunk()
+    new_chunk.Init(door_top_tile, door_top_tile, MapChunkType.SQUARE, 0, -2, 1, 2)
+    rep.chunks.append(new_chunk)
+    rep.write_exit = True
+    rep.exit_addr = exit_addr
+    rep.exit_offset = [0, 0]
+    return rep
+    
+def MakeOnePieceDoorEntrancePlacementWithoutAddr(door_top_tile):
+    rep = RoomEntrancePlacement()
+    rep.non_walkable_tiles = [[0, -1], [-1, -1], [1, -1], [0, -2], [-1, -2], [1, -2], [0, -3], [-1, -3], [1, -3]]
+    rep.chunks = []
+    new_chunk = MapChunk()
+    new_chunk.Init(door_top_tile, door_top_tile, MapChunkType.SQUARE, 0, -2, 1, 2)
+    rep.chunks.append(new_chunk)
+    rep.write_exit = False
+    return rep
+
+def MakeSingleTilePlacement(tile):
+    rep = RoomEntrancePlacement()
+    rep.non_walkable_tiles = []
+    rep.chunks = []
+    new_chunk = MapChunk()
+    new_chunk.Init(tile, tile, MapChunkType.TILE, 0, 0, 1, 1)
+    rep.chunks.append(new_chunk)
+    rep.write_exit = False
+    return rep
+    
+def MakeCrystalDoorEntrancePlacement(door_top_tile, crystal_insignia_tile, exit_addr, npc_addr):
+    rep = RoomEntrancePlacement()
+    rep.non_walkable_tiles = [[0, -1], [-1, -1], [1, -1], [0, -2], [-1, -2], [1, -2], [0, -3], [-1, -3], [1, -3], [0, -4], [-1, -4], [1, -4]]
+    rep.chunks = []
+    new_chunk = MapChunk()
+    new_chunk.Init(door_top_tile, door_top_tile, MapChunkType.SQUARE, 0, -2, 1, 2)
+    rep.chunks.append(new_chunk)
+    new_chunk = MapChunk()
+    new_chunk.Init(crystal_insignia_tile, crystal_insignia_tile, MapChunkType.TILE, 0, -3, 1, 1)
+    rep.chunks.append(new_chunk)
+    rep.write_exit = True
+    rep.exit_addr = exit_addr
+    rep.exit_offset = [0, 0]
+    rep.exit_npc_pos_offset = [0, -1]
+    rep.exit_npc_pos_start_addr.append(npc_addr)
+    return rep
+    
+def MakeSingleTilePlacementWithAddr(tile, exit_addr):
+    rep = RoomEntrancePlacement()
+    rep.non_walkable_tiles = []
+    rep.chunks = []
+    new_chunk = MapChunk()
+    new_chunk.Init(tile, tile, MapChunkType.TILE, 0, 0, 1, 1)
+    rep.chunks.append(new_chunk)
+    rep.write_exit = True
+    rep.exit_addr = exit_addr
+    rep.exit_offset = [0, 0]
+    return rep    
+
+def MakeOutsideDustRoomPlacement(tile, exit_addr):    
+    # exit from castle sword 1 back to the surface
+    rep = RoomEntrancePlacement()
+    rep.non_walkable_tiles = [[0, 1], [-1, 1], [1, 1], [0, 2], [-1, 2], [1, 2]]
+    rep.chunks = []
+    new_chunk = MapChunk()
+    new_chunk.Init(tile, tile, MapChunkType.TILE, 0, 1, 1, 1)
+    rep.chunks.append(new_chunk)
+    rep.write_exit = True
+    rep.exit_addr = exit_addr
+    rep.exit_offset = [0, 0]
+    return rep
+    
+def GetMinDistanceBetweenPatches(patch_a, patch_b):
+    return min([GetDistanceBetweenCells(cell_a, cell_b) for cell_a in patch_a for cell_b in patch_b])
+    
+def GetDistanceBetweenCells(cell_a, cell_b):
+    x = abs(cell_a[0] - cell_b[0])
+    y = abs(cell_a[1] - cell_b[1])
+    return math.sqrt((x*x) + (y*y))
+    
+def GetAllPatchesAreDistanceApart(patches, min_distance):
+    for patch_i in range(0, len(patches) - 1):
+        for patch_j in range(patch_i + 1, len(patches)):
+            if GetMinDistanceBetweenPatches(patches[patch_i], patches[patch_j]) < min_distance:
+                return False
+    return True
+    
+def GetPatchBoundingBox(patch):
+    patch_min = [min([cell[0] for cell in patch]), min([cell[1] for cell in patch])]
+    patch_max = [max([cell[0] for cell in patch]), max([cell[1] for cell in patch])]
+    # print("GetPatchBoundingBox", patch_min, patch_max)
+    return [patch_min, patch_max]
+    
+def ApproxCountNonOverlappingRegionsInPatch(patch, region_x, region_y):
+    copy_patch = list(patch)
+    num_regions = 0
+    while True:
+        loc = FindFirstRegionInCellList(copy_patch, region_x, region_y)
+        if len(loc) != 2:
+            # failed to find region                                
+            break
+        num_regions += 1
+        # remove region from patch
+        for x_offset in range(0, region_x):
+            for y_offset in range(0, region_y):
+                remove_cell = [loc[0] + x_offset, loc[1] + y_offset]
+                copy_patch.remove([loc[0] + x_offset, loc[1] + y_offset])
+    return num_regions
+    
+def FindFirstRegionInCellList(cell_list, region_x, region_y):
+    for cell in cell_list:
+        valid = True
+        for x_off in range(0, region_x):
+            for y_off in range(0, region_y):
+                if not [cell[0] + x_off, cell[1] + y_off] in cell_list:
+                    valid = False
+                    break
+            if not valid:
+                break
+        if valid:
+            return cell
+    return []
+    
+def RemoveIneffectiveChunks(chunks, backing_tile):
+    map_cols = [[backing_tile for y in range(0, MAP_Y_MAX + 1)] for x in range(0, MAP_X_MAX + 1)]
+    EvaluateMap(map_cols, chunks, backing_tile)
+    test_map_cols = [[backing_tile for y in range(0, MAP_Y_MAX + 1)] for x in range(0, MAP_X_MAX + 1)]
+    for chunk_idx in range(len(chunks) - 1, -1, -1):
+        test_chunks = list(chunks)
+        del(test_chunks[chunk_idx])
+        EvaluateMap(test_map_cols, test_chunks, backing_tile)
+        keep_chunk = False
+        for x in range(0, MAP_X_MAX + 1):
+            for y in range(0, MAP_Y_MAX + 1):
+                if map_cols[x][y] != test_map_cols[x][y]:
+                    keep_chunk = True
+                    break
+            if keep_chunk:
+                break
+        if not keep_chunk:
+            del(chunks[chunk_idx])
+    return
+    
+def RandomlyGenerateOceanCaves1Map(filebytes):
+
+    params = MultiRoomDungeonParams()
+    
+    params.walkable_tiles = [0x02, 0x03, 0x04, 0x05, 0x17, 0x19, 0x1a, 0x1b, 0x1d]
+    params.map_fill_tile = 0x00
+    params.backing_tile = 0x1e # black square
+    params.room_open_tile = 0x1d # green (open)
+    params.chunk_tile_choices = [0x1d, 0x00]
+    params.rooms_max_size_bytes = 47
+    params.map_start_address = 0xd05e
+    params.num_rooms = 1
+    params.min_room_size = 9
+    params.min_distance_between_rooms = 6
+    params.min_room_y = 6
+    params.max_size_bytes = 72
+    
+    def GetCaveValid(patches):
+        if not len(patches) == params.num_rooms:
+            return False
+        return True
+        
+    params.get_valid_func = GetCaveValid
+    
+    # define data
+    room_placements = []
+    
+    rp = RoomPlacement()
+    rp.room_id = 0x68
+    
+    rp.room_entrance_placements.append(MakeStairsUpEntrancePlacement(0x06, 0x1e, 0x11d))
+    rp.room_entrance_placements.append(MakeStairsUpEntrancePlacement(0x07, 0x1e, 0x11e))
+    rp.room_entrance_placements.append(MakeStairsUpEntrancePlacement(0x08, 0x1e, 0x11f))
+    rp.room_entrance_placements.append(MakeStairsUpEntrancePlacement(0x09, 0x1e, 0x120))
+    
+    room_placements.append(rp)
+    
+    params.room_placements = room_placements
+    
+    RandomlyGenerateMultiRoomDungeonMap(params, filebytes)
+
+    return
+
+def RandomlyGenerateOceanCaves2Map(filebytes):
+
+    params = MultiRoomDungeonParams()
+    
+    params.walkable_tiles = [0x02, 0x03, 0x04, 0x05, 0x17, 0x19, 0x1a, 0x1b, 0x1d]
+    params.map_fill_tile = 0x00
+    params.backing_tile = 0x1e # black square
+    params.room_open_tile = 0x1d # green (open)
+    params.chunk_tile_choices = [0x1d, 0x00]
+    params.rooms_max_size_bytes = 81
+    params.map_start_address = 0xd0a6
+    params.num_rooms = 1
+    params.min_room_size = 9
+    params.min_distance_between_rooms = 6
+    params.min_room_y = 6
+    params.max_size_bytes = 107
+    
+    def GetCaveValid(patches):
+        if not len(patches) == params.num_rooms:
+            return False
+        return True
+        
+    params.get_valid_func = GetCaveValid
+    
+    # define data
+    
+    rp = RoomPlacement()
+    rp.room_id = 0x69
+    
+    rp.room_entrance_placements.append(MakeStairsUpEntrancePlacement(0x06, 0x1e, 0x121))
+    rp.room_entrance_placements.append(MakeStairsUpEntrancePlacement(0x07, 0x1e, 0x122))
+    rp.room_entrance_placements.append(MakeStairsUpEntrancePlacement(0x08, 0x1e, 0x123))
+    rp.room_entrance_placements.append(MakeStairsUpEntrancePlacement(0x09, 0x1e, 0x124))
+    
+    params.room_placements.append(rp)
+    
+    RandomlyGenerateMultiRoomDungeonMap(params, filebytes)
+
+    return
+    
+def RandomlyGenerateUnderseaMap(filebytes):
+
+    params = MultiRoomDungeonParams()
+    
+    params.walkable_tiles = [0x00, 0x01, 0x0b, 0x12, 0x13, 0x14, 0x15, 0x17, 0x19, 0x1a, 0x1e]
+    params.map_fill_tile = 0x1d
+    params.backing_tile = 0x1e
+    params.room_open_tile = 0x01
+    params.chunk_tile_choices = [0x01] + ([0x1d] * 5)
+    params.rooms_max_size_bytes = 41
+    params.map_start_address = 0xd191
+    params.num_rooms = 3
+    params.min_room_size = 20
+    params.min_distance_between_rooms = 6
+    params.min_room_y = 6
+    params.max_size_bytes = 65
+    
+    def GetUnderseaValid(patches):
+        if not len(patches) == params.num_rooms:
+            return False
+        if not all([len(patch) >= 20 for patch in patches]):
+            return False
+        for patch in patches:
+            if any([cell[1] < params.min_room_y for cell in patch]):
+                return False
+        if not GetAllPatchesAreDistanceApart(patches, params.min_distance_between_rooms):
+            return False
+        for patch in patches:
+            if ApproxCountNonOverlappingRegionsInPatch(patch, 2, 2) < 1:
+                return False
+        return True
+        
+    params.get_valid_func = GetUnderseaValid
+    
+    # define data
+    
+    room_placements = []
+    
+    ######################################################################################
+    # seabed 2
+    rp = RoomPlacement()
+    rp.room_id = 0x71
+    rp.room_entrance_placements.append(MakeSingleTilePlacementWithAddr(0x07, 0x137)) # stairs
+    rep = RoomEntrancePlacement()
+    rep.non_walkable_tiles = []
+    rep.chunks = []
+    new_chunk = MapChunk()
+    new_chunk.Init(0x02, 0x02, MapChunkType.SQUARE, 0, 0, 2, 2) # dragon palace
+    rep.chunks.append(new_chunk)
+    rep.write_exit = True
+    rep.exit_addr = 0x13c
+    rep.exit_offset = [0, 1]
+    rp.room_entrance_placements.append(rep)
+    
+    room_placements.append(rp)
+
+    ######################################################################################
+    # seabed 2
+    rp = RoomPlacement()
+    rp.room_id = 0x70
+    rp.room_entrance_placements.append(MakeSingleTilePlacementWithAddr(0x07, 0x136)) # stairs
+    room_placements.append(rp)
+
+    ######################################################################################
+    # seabed 1
+    rp = RoomPlacement()
+    rp.room_id = 0x6c
+    
+    # back to the surface
+    rep = RoomEntrancePlacement()
+    rep.non_walkable_tiles = [[1, 0], [1, -1], [1, 1], [2, 0], [2, -1], [2, 1], [3, 0], [3, -1], [3, 1]]
+    rep.chunks = []
+    new_chunk = MapChunk()
+    new_chunk.Init(0x13, 0x13, MapChunkType.TILE, 1, 0, 1, 1) # horizontal bridge
+    rep.chunks.append(new_chunk)
+    new_chunk = MapChunk()
+    new_chunk.Init(0x1b, 0x1b, MapChunkType.TILE, 2, 0, 1, 1) # whirlpool
+    rep.chunks.append(new_chunk)
+    rep.write_exit = True
+    rep.exit_addr = 0x22
+    rep.exit_offset = [1, 0]
+    rp.room_entrance_placements.append(rep)
+    rp.room_entrance_placements.append(MakeSingleTilePlacementWithAddr(0x06, 0x132)) # town
+    rp.room_entrance_placements.append(MakeSingleTilePlacementWithAddr(0x07, 0x133)) # stairs
+
+    room_placements.append(rp)
+
+    params.room_placements = room_placements
+    
+    RandomlyGenerateMultiRoomDungeonMap(params, filebytes)
+    
+    # copy position from exit 0x13c to 0x44
+    exit_pos = GetExitPosition(filebytes, 0x13c)
+    SetExitPosition(filebytes, 0x44, exit_pos[0], exit_pos[1])
+    
+    return
+    
+def RandomlyGenerateUnderseaCavesMap(filebytes):
+
+    params = MultiRoomDungeonParams()
+    
+    params.walkable_tiles = [0x02, 0x03, 0x04, 0x05, 0x19, 0x1a, 0x1b, 0x1d]
+    params.map_fill_tile = 0x00
+    params.backing_tile = 0x1e # black square
+    params.room_open_tile = 0x1d # green (open)
+    params.chunk_tile_choices = [0x00, 0x1d]
+    params.rooms_max_size_bytes = 100
+    params.map_start_address = 0xd111
+    params.num_rooms = 2
+    params.min_room_size = 9
+    params.min_distance_between_rooms = 6
+    params.min_room_y = 6
+    params.max_size_bytes = 128
+    
+    def GetUnderseaCaveValid(patches):
+        if not len(patches) == params.num_rooms:
+            return False
+        if not all([len(patch) >= 80 for patch in patches]):
+            return False
+        for patch in patches:
+            if any([cell[1] < params.min_room_y for cell in patch]):
+                return False
+        if not GetAllPatchesAreDistanceApart(patches, params.min_distance_between_rooms):
+            return False
+        return True
+        
+    params.get_valid_func = GetUnderseaCaveValid
+    
+    # define data
+    
+    room_placements = []
+    
+    ######################################################################################
+    # undersea cave 2
+    rp = RoomPlacement()
+    rp.room_id = 0x6f
+    rp.room_entrance_placements.append(MakeStairsUpEntrancePlacement(0x07, 0x1e, 0x134))
+    rp.room_entrance_placements.append(MakeStairsUpEntrancePlacement(0x09, 0x1e, 0x13a))
+    rp.room_entrance_placements.append(MakeStairsUpEntrancePlacement(0x08, 0x1e, 0x138))
+    room_placements.append(rp)
+    
+    ######################################################################################
+    # undersea cave 1
+    rp = RoomPlacement()
+    rp.room_id = 0x6e
+    rp.room_entrance_placements.append(MakeStairsUpEntrancePlacement(0x06, 0x1e, 0x131))
+    rp.room_entrance_placements.append(MakeStairsDownEntrancePlacement(0x0a, 0x135))
+    room_placements.append(rp)
+
+    params.room_placements = room_placements
+    
+    RandomlyGenerateMultiRoomDungeonMap(params, filebytes)
+
+    return
+
+def MakeDragonPalaceChunk():
+    tile_choices = [0x04] + ([0x01, 0x03, 0x0d] * 3)
+    min_room_y = 6
+    if random.randrange(0, 10) == 0:
+        # single tile fake orb
+        new_chunk = MapChunk()
+        new_chunk.Init(0x08, 0x08, MapChunkType.TILE, 0, 0, 1, 1)
+        new_chunk.x_pos = random.randrange(1, MAP_X_MAX - 1)
+        new_chunk.y_pos = random.randrange(min_room_y, MAP_Y_MAX - 1)
+        return new_chunk
+    else:
+        # random patch or ring
+        tile = random.choice(tile_choices)
+        new_chunk = MapChunk()
+        chunk_type = MapChunkType.RING
+        if random.randrange(0, 3) == 0:
+            chunk_type = MapChunkType.CHECK
+        new_chunk.Init(tile, tile, chunk_type, 0, 0, 0, 0)
+        new_chunk.x_pos = random.randrange(0, MAP_X_MAX - 1)
+        new_chunk.y_pos = random.randrange(0, MAP_Y_MAX - 1)
+        new_chunk.x_size = random.randrange(1, min(int(0.5 * MAP_X_MAX), MAP_X_MAX - new_chunk.x_pos))
+        new_chunk.y_size = random.randrange(1, min(int(0.5 * MAP_Y_MAX), MAP_Y_MAX - new_chunk.y_pos))
+        return new_chunk
+
+def RandomlyGenerateDragonPalaceMap(filebytes):
+    RandomlyGenerateDragonPalace123Map(filebytes)
+    RandomlyGenerateDragonPalace4Map(filebytes)
+    RandomlyGenerateSeiRyuRoomMap(filebytes)
+    RandomlyGenerateDragonPalaceRoomsMap(filebytes)
+    
+    # randomly permute exits to locked rooms
+    one_way_exits = []
+    exit_addrs = [0x13f, 0x142, 0x145]
+    for exit_addr in exit_addrs:
+        start_addr = 0x92d0 + (exit_addr * 3)
+        exit_data = list(filebytes[start_addr:start_addr+3])
+        one_way_exits.append([exit_addr] + exit_data)
+    RandomlyPermuteOneWayExits(one_way_exits)
+    WriteOneWayExits(filebytes, one_way_exits)
+    
+    return
+        
+def RandomlyGenerateDragonPalace123Map(filebytes):
+
+    params = MultiRoomDungeonParams()
+    
+    params.walkable_tiles = [0x00, 0x03, 0x04, 0x07, 0x08, 0x0a, 0x0b, 0x0e, 0x0f, 0x10]
+    params.map_fill_tile = 0x01
+    params.backing_tile = 0x1e # black square
+    params.room_open_tile = 0x03
+    params.chunk_tile_choices = [0x01, 0x03, 0x04, 0x0d]
+    params.rooms_max_size_bytes = 263
+    params.map_start_address = 0xcdbb
+    params.num_rooms = 3
+    params.min_room_size = 9
+    params.min_distance_between_rooms = 6
+    params.min_room_y = 6
+    params.max_size_bytes = 306
+    
+    def GetDragonPalaceValid(patches):
+        if not len(patches) == params.num_rooms:
+            return False
+        if not all([len(patch) >= 40 for patch in patches]):
+            return False
+        for patch in patches:
+            if any([cell[1] < params.min_room_y for cell in patch]):
+                return False
+        if not GetAllPatchesAreDistanceApart(patches, params.min_distance_between_rooms):
+            return False
+        for patch in patches:
+            if ApproxCountNonOverlappingRegionsInPatch(patch, 2, 2) < 3:
+                return False
+        return True
+        
+    params.get_valid_func = GetDragonPalaceValid
+    
+    params.make_chunk_func = MakeDragonPalaceChunk
+    
+    params.chunks_must_change_walkable = True
+    
+    # define data
+    
+    room_placements = []
+    
+    ######################################################################################
+    # dragon palace 1
+    rp = RoomPlacement()
+    rp.room_id = 0x72
+    rp.room_entrance_placements.append(MakeStairsUpEntrancePlacement(0x11, 0x1e, 0x140))
+    rp.room_entrance_placements.append(MakeOutsideDustRoomPlacement(0x05, 0x139))
+    rp.room_entrance_placements.append(MakeOnePieceDoorEntrancePlacementWithoutAddr(0x17))
+    
+    # npcs 0-2
+    for npc_addr in [0xa98f, 0xa995, 0xa998]:
+        rnp = RoomNPCPlacement()
+        rnp.required_cells = [[0, 0], [0, 1], [1, 0], [1, 1]]
+        rnp.pos_start_addr = npc_addr
+        rp.room_npc_placements.append(rnp)
+    
+    room_placements.append(rp)
+    
+    ######################################################################################
+    # dragon palace 2
+    rp = RoomPlacement()
+    rp.room_id = 0x73
+    rp.room_entrance_placements.append(MakeStairsDownEntrancePlacement(0x14, 0x13d))
+    rp.room_entrance_placements.append(MakeStairsUpEntrancePlacement(0x12, 0x1e, 0x143))
+    door_placement = MakeOnePieceDoorEntrancePlacementWithoutAddr(0x19)
+    door_placement.exit_npc_pos_start_addr.append(0xa9ab) # BLUEKEY check
+    door_placement.exit_npc_pos_offset = [0, -1]
+    rp.room_entrance_placements.append(door_placement)
+
+    # npcs 0-2
+    for npc_addr in [0xa99e, 0xa9a4, 0xa9a7]:
+        rnp = RoomNPCPlacement()
+        rnp.required_cells = [[0, 0], [0, 1], [1, 0], [1, 1]]
+        rnp.pos_start_addr = npc_addr
+        rp.room_npc_placements.append(rnp)
+    
+    room_placements.append(rp)
+
+    ######################################################################################
+    # dragon palace 3
+    rp = RoomPlacement()
+    rp.room_id = 0x74
+    rp.room_entrance_placements.append(MakeStairsDownEntrancePlacement(0x15, 0x13e))
+    rp.room_entrance_placements.append(MakeStairsUpEntrancePlacement(0x13, 0x1e, 0x144))
+    door_placement = MakeOnePieceDoorEntrancePlacementWithoutAddr(0x1b)
+    door_placement.exit_npc_pos_start_addr.append(0xa9c1) # BLUEKEY check
+    door_placement.exit_npc_pos_offset = [0, -1]
+    rp.room_entrance_placements.append(door_placement)
+
+    # npcs 0-2
+    for npc_addr in [0xa9b4, 0xa9ba, 0xa9bd]:
+        rnp = RoomNPCPlacement()
+        rnp.required_cells = [[0, 0], [0, 1], [1, 0], [1, 1]]
+        rnp.pos_start_addr = npc_addr
+        rp.room_npc_placements.append(rnp)
+    
+    room_placements.append(rp)
+
+    params.room_placements = room_placements
+    
+    RandomlyGenerateMultiRoomDungeonMap(params, filebytes)
+
+    return
+
+def RandomlyGenerateDragonPalace4Map(filebytes):
+
+    params = MultiRoomDungeonParams()
+    
+    params.walkable_tiles = [0x00, 0x03, 0x04, 0x07, 0x08, 0x0a, 0x0b, 0x0e, 0x0f, 0x10]
+    params.map_fill_tile = 0x01
+    params.backing_tile = 0x1e # black square
+    params.room_open_tile = 0x03
+    params.chunk_tile_choices = [0x01, 0x03, 0x04, 0x0d]
+    params.rooms_max_size_bytes = 41
+    params.map_start_address = 0xceed
+    params.num_rooms = 1
+    params.min_room_size = 9
+    params.min_distance_between_rooms = 6
+    params.min_room_y = 6
+    params.max_size_bytes = 51
+    
+    def GetDragonPalaceValid(patches):
+        if not len(patches) == params.num_rooms:
+            return False
+        if not all([len(patch) >= 40 for patch in patches]):
+            return False
+        for patch in patches:
+            if any([cell[1] < params.min_room_y for cell in patch]):
+                return False
+        if not GetAllPatchesAreDistanceApart(patches, params.min_distance_between_rooms):
+            return False
+        return True
+        
+    params.get_valid_func = GetDragonPalaceValid
+    
+    params.make_chunk_func = MakeDragonPalaceChunk
+    
+    params.chunks_must_change_walkable = True
+    
+    # define data
+    
+    room_placements = []
+    
+    ######################################################################################
+    # dragon palace 4
+    rp = RoomPlacement()
+    rp.room_id = 0x75
+    rp.room_entrance_placements.append(MakeStairsDownEntrancePlacement(0x14, 0x141))
+    door_placement = MakeOnePieceDoorEntrancePlacementWithoutAddr(0x17)
+    door_placement.exit_npc_pos_start_addr.append(0xa9ca) # BLUEKEY check
+    door_placement.exit_npc_pos_offset = [0, -1]
+    rp.room_entrance_placements.append(door_placement)
+
+    room_placements.append(rp)
+
+    params.room_placements = room_placements
+    
+    RandomlyGenerateMultiRoomDungeonMap(params, filebytes)
+
+    return
+
+def RandomlyGenerateSeiRyuRoomMap(filebytes):
+
+    params = MultiRoomDungeonParams()
+    
+    params.walkable_tiles = [0x00, 0x03, 0x04, 0x07, 0x08, 0x0a, 0x0b, 0x0e, 0x0f, 0x10]
+    params.map_fill_tile = 0x01
+    params.backing_tile = 0x1e # black square
+    params.room_open_tile = 0x03
+    params.chunk_tile_choices = [0x01, 0x03, 0x04, 0x0d]
+    params.rooms_max_size_bytes = 52
+    params.map_start_address = 0xcf63
+    params.num_rooms = 1
+    params.min_room_size = 0x20
+    params.min_distance_between_rooms = 6
+    params.min_room_y = 6
+    params.max_size_bytes = 61
+    
+    def GetDragonPalaceValid(patches):
+        if not len(patches) == params.num_rooms:
+            return False
+        if not all([len(patch) >= 40 for patch in patches]):
+            return False
+        for patch in patches:
+            if any([cell[1] < params.min_room_y for cell in patch]):
+                return False
+        if not GetAllPatchesAreDistanceApart(patches, params.min_distance_between_rooms):
+            return False
+        return True
+        
+    params.get_valid_func = GetDragonPalaceValid
+    
+    def MakeSeiRyuRoomChunk():
+        tile_choices = [0x04] + ([0x01, 0x03, 0x0d] * 3)
+        min_room_y = 6
+        if random.randrange(0, 3) == 0:
+            # single tile fake orb
+            new_chunk = MapChunk()
+            new_chunk.Init(0x08, 0x08, MapChunkType.TILE, 0, 0, 1, 1)
+            new_chunk.x_pos = random.randrange(1, MAP_X_MAX - 1)
+            new_chunk.y_pos = random.randrange(min_room_y, MAP_Y_MAX - 1)
+            return new_chunk
+        else:
+            # random patch or ring
+            tile = random.choice(tile_choices)
+            new_chunk = MapChunk()
+            chunk_type = MapChunkType.RING
+            if random.randrange(0, 3) == 0:
+                chunk_type = MapChunkType.CHECK
+            new_chunk.Init(tile, tile, chunk_type, 0, 0, 0, 0)
+            new_chunk.x_pos = random.randrange(0, MAP_X_MAX - 1)
+            new_chunk.y_pos = random.randrange(0, MAP_Y_MAX - 1)
+            new_chunk.x_size = random.randrange(1, min(int(0.5 * MAP_X_MAX), MAP_X_MAX - new_chunk.x_pos))
+            new_chunk.y_size = random.randrange(1, min(int(0.5 * MAP_Y_MAX), MAP_Y_MAX - new_chunk.y_pos))
+            return new_chunk
+    
+    params.make_chunk_func = MakeSeiRyuRoomChunk
+    
+    params.chunks_must_change_walkable = False
+    
+    head_npc_placement_addr = 0xa9d3
+    
+    # define data
+    
+    room_placements = []
+    
+    ######################################################################################
+    # sei-ryu's room
+    rp = RoomPlacement()
+    rp.room_id = 0x76
+    orb_placement = MakeSingleTilePlacement(0x10) # sei-ryu's orb
+    orb_placement.exit_npc_pos_start_addr.append(head_npc_placement_addr)
+    orb_placement.exit_npc_pos_offset = [0, 0]
+    rp.room_entrance_placements.append(orb_placement)
+    rp.room_entrance_placements.append(MakeWarpBackDoorEntrancePlacement(0x17, 0x145))
+
+    room_placements.append(rp)
+
+    params.room_placements = room_placements
+    
+    RandomlyGenerateMultiRoomDungeonMap(params, filebytes)
+    
+    # set npc positions for Sei-Ryu's other three segments
+    head_pos = [filebytes[head_npc_placement_addr], filebytes[head_npc_placement_addr+1]]
+    filebytes[0xa9da] = head_pos[0]
+    filebytes[0xa9db] = head_pos[1] - 1
+    filebytes[0xa9e1] = head_pos[0] + 1
+    filebytes[0xa9e2] = head_pos[1] - 1
+    filebytes[0xa9e8] = head_pos[0] + 1
+    filebytes[0xa9e9] = head_pos[1] - 2
+
+    return
+    
+def RandomlyGenerateDragonPalaceRoomsMap(filebytes):
+    params = MultiRoomDungeonParams()
+    
+    params.walkable_tiles = [0x00, 0x03, 0x04, 0x07, 0x08, 0x0a, 0x0b, 0x0e, 0x0f, 0x10]
+    params.map_fill_tile = 0x01
+    params.backing_tile = 0x1e # black square
+    params.room_open_tile = 0x03
+    params.chunk_tile_choices = [0x01, 0x03, 0x04, 0x0d]
+    params.rooms_max_size_bytes = 51
+    params.map_start_address = 0xcf20
+    params.num_rooms = 3
+    params.min_room_size = 9
+    params.min_distance_between_rooms = 6
+    params.min_room_y = 6
+    params.max_size_bytes = 67
+    
+    def GetDragonPalaceValid(patches):
+        if not len(patches) == params.num_rooms:
+            return False
+        if not all([len(patch) >= 40 for patch in patches]):
+            return False
+        for patch in patches:
+            if any([cell[1] < params.min_room_y for cell in patch]):
+                return False
+        if not GetAllPatchesAreDistanceApart(patches, params.min_distance_between_rooms):
+            return False
+        return True
+        
+    params.get_valid_func = GetDragonPalaceValid
+    
+    params.make_chunk_func = MakeDragonPalaceChunk
+    
+    params.chunks_must_change_walkable = True
+    
+    # define data
+    
+    room_placements = []
+    
+    ######################################################################################
+    # dragon treasure room
+    rp = RoomPlacement()
+    rp.room_id = 0x77
+    rp.room_entrance_placements.append(MakeWarpBackDoorEntrancePlacement(0x19, 0x142))
+    
+    for npc_addr in [0xa9f1, 0xa9f8, 0xa9ff]:
+        rnp = RoomNPCPlacement()
+        rnp.required_cells = [[0, 0], [-1, 0], [1, 0], [0, 1], [-1, 1], [1, 1]]
+        rnp.pos_start_addr = npc_addr
+        rp.room_npc_placements.append(rnp)
+
+    room_placements.append(rp)
+
+    ######################################################################################
+    # dragon key room
+    rp = RoomPlacement()
+    rp.room_id = 0x79
+    rp.room_entrance_placements.append(MakeWarpBackDoorEntrancePlacement(0x1b, 0x13b))
+    
+    rnp = RoomNPCPlacement()
+    rnp.required_cells = [[0, 0], [-1, 0], [1, 0], [0, 1], [-1, 1], [1, 1]]
+    rnp.pos_start_addr = 0xaa08
+    rp.room_npc_placements.append(rnp)
+
+    room_placements.append(rp)
+
+    ######################################################################################
+    # dragon empty room
+    rp = RoomPlacement()
+    rp.room_id = 0x78
+    rp.room_entrance_placements.append(MakeWarpBackDoorEntrancePlacement(0x17, 0x13f))
+    
+    room_placements.append(rp)
+
+    params.room_placements = room_placements
+
+    RandomlyGenerateMultiRoomDungeonMap(params, filebytes)
+    
+    # copy npc positions for key room chests
+    chest_pos = [filebytes[0xaa08], filebytes[0xaa09]]
+    for dest_addr in [0xaa0f, 0xaa16, 0xaa1d]:
+        filebytes[dest_addr] = chest_pos[0]
+        filebytes[dest_addr+1] = chest_pos[1]
+
     return
 
 def ApplyIPSPatch(filebytes, patchbytes):
@@ -3005,7 +4874,7 @@ def FFLRandomize(seed, rompath, monstercsvpath, ffl2rompath, options, options_nu
     
     print("Options:")
     for option in options.keys():
-        if not options[option]:
+        if options[option] != default_options[option]:
             print(command_line_switches[option])
     for option in options_numbers.keys():
         print(command_line_switches_numbers[option], options_numbers[option])
@@ -3044,6 +4913,13 @@ def FFLRandomize(seed, rompath, monstercsvpath, ffl2rompath, options, options_nu
     # ExportMeatMonstersCSV(filebytes, rompath)
     # ExportItemsCSV(filebytes, rompath)
     
+    # target_rooms = [0x72, 0x73, 0x74, 0x75, 0x76, 0x77, 0x78, 0x79]
+    # for target_room in target_rooms:
+        # print("EXITS LEADING TO", hex(target_room))
+        # for exit_offset in range(0, 0x1da):
+            # if filebytes[0x92d0 + (exit_offset * 3)] == target_room:
+                # print(hex(exit_offset))
+    
     ##########################
 
     print("Randomizing...")
@@ -3053,11 +4929,14 @@ def FFLRandomize(seed, rompath, monstercsvpath, ffl2rompath, options, options_nu
     q = pathlib.Path(rompath).with_name("FFL_" + str(seed) + ".gb")
     print("Writing:", q)
 
-    # write bytes to output file
-    outf = open(q, 'wb')
+    WriteBytesToFile(filebytes, q)
+    
+    return
+    
+def WriteBytesToFile(filebytes, filename):
+    outf = open(filename, 'wb')
     outf.write(bytes(filebytes))
     outf.close()
-    
     return
     
 def PromptForOptions(options, options_numbers):
@@ -3070,7 +4949,8 @@ def PromptForOptions(options, options_numbers):
         HP_TABLE:"Randomize HP table?", MUTANT_RACE:"Randomize mutant race?", \
         MEAT:"Randomize meat transformations?", PATCH:"Apply patch before randomization?", \
         TOWER:"Randomize tower exits?", DUNGEONS:"Randomize dungeon exits?", SKYSCRAPER:"Randomize skyscraper exits?", \
-        SMALL_PICS:"Randomize small pics?", CONTINENT:"Randomize Continent map?" }
+        SMALL_PICS:"Randomize small pics?", WORLD_MAPS:"Randomize world maps?", \
+        DUNGEON_MAPS:"Randomize dungeon maps?" }
         
     number_prompt_strings = { TRANSFORMATION_LEVEL_ADJUST:"Edit meat transformation level adjust? Type number to edit:", \
         ENCOUNTER_LEVEL_ADJUST:"Edit encounter level adjust? Type number to edit:", \
@@ -3079,10 +4959,14 @@ def PromptForOptions(options, options_numbers):
         }
         
     for switch in prompt_strings.keys():
-        options[switch]=True
-        response = input(prompt_strings[switch] + " Default Yes, type N for No:")
-        if response == "N":
-            options[switch]=False
+        if options[switch]:
+            response = input(prompt_strings[switch] + " Default Yes, type N for No:")
+            if response.upper() == "N":
+                options[switch]=False
+        else:
+            response = input(prompt_strings[switch] + " Default No, type Y for Yes:")
+            if response.upper() == "Y":
+                options[switch]=True
             
     for switch in number_prompt_strings.keys():
         response = input(number_prompt_strings[switch])
@@ -3107,10 +4991,10 @@ ffl2rompath = ""
 monstercsvpath = ""
 seed = 0
 
-options = { MUTANT_ABILITIES:True, ARMOR:True, COMBAT_ITEMS:True, CHARACTER_ITEMS:True, ENEMY_ITEMS:True, \
+default_options = { MUTANT_ABILITIES:True, ARMOR:True, COMBAT_ITEMS:True, CHARACTER_ITEMS:True, ENEMY_ITEMS:True, \
     SHOPS:True, CHESTS:True, MONSTERS:True, ENCOUNTERS:True, GUILD_MONSTERS:True, HP_TABLE:True,
     MUTANT_RACE:True, MEAT:True, PATCH:True, TOWER:True, DUNGEONS:True, SKYSCRAPER:True, SMALL_PICS:True,
-    CONTINENT:True }
+    WORLD_MAPS:False, DUNGEON_MAPS:False }
     
 options_numbers = { TRANSFORMATION_LEVEL_ADJUST:0, ENCOUNTER_LEVEL_ADJUST:0, MONSTER_GOLD_OFFSET_ADJUST:0, \
     GOLD_TABLE_AMOUNT_MULTIPLIER:1.0}
@@ -3120,12 +5004,14 @@ command_line_switches = { MUTANT_ABILITIES:"nomutantabilities", ARMOR:"noarmor",
     SHOPS:"noshops", CHESTS:"nochests", MONSTERS:"nomonsters", ENCOUNTERS:"noencounters", \
     GUILD_MONSTERS:"noguildmonsters", HP_TABLE:"nohptable", MUTANT_RACE:"nomutantrace", \
     MEAT:"nomeat", PATCH:"nopatch", TOWER:"notower", DUNGEONS:"nodungeons", SKYSCRAPER:"noskyscraper", \
-    SMALL_PICS:"nosmallpics", CONTINENT:"nocontinent" }
+    SMALL_PICS:"nosmallpics", WORLD_MAPS:"worldmaps", DUNGEON_MAPS:"dungeonmaps" }
     
 command_line_switches_numbers = { TRANSFORMATION_LEVEL_ADJUST:"transformation_level", \
     ENCOUNTER_LEVEL_ADJUST:"encounter_level", MONSTER_GOLD_OFFSET_ADJUST:"monster_gold", \
     GOLD_TABLE_AMOUNT_MULTIPLIER:"gold_table_multiplier" \
     }
+    
+options = dict(default_options)
 
 if len(sys.argv) >= 4:
     
@@ -3140,7 +5026,7 @@ if len(sys.argv) >= 4:
         if sys.argv[argidx] in switch_vals:
             switchidx = switch_vals.index(sys.argv[argidx])
             option = switch_keys[switchidx]
-            options[option] = False
+            options[option] = not options[option]
     
     switch_keys = list(command_line_switches_numbers.keys())
     for switch_key in switch_keys:
@@ -3180,7 +5066,7 @@ else:
     else:
         seed = int(seed_str)
     change_options = input("Change options? Default No, type Y for Yes:")
-    if change_options == "Y":
+    if change_options.upper() == "Y":
         PromptForOptions(options, options_numbers)
     apply_harder_encounters = input("Make encounters harder? Default No, type Y for Yes:")
     if apply_harder_encounters:
