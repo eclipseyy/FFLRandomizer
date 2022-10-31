@@ -6,7 +6,7 @@ import sys
 import enum
 import math
 
-VERSION = "0.012"
+VERSION = "0.013"
 
 # contact: eclipseyy@gmx.com
 
@@ -167,6 +167,7 @@ def RandomizeFFLRomBytes(filebytes, monstercsvpath, ffl2bytes, seed, options, op
         RandomlyGenerateOceanCaves2Map(filebytes)
         RandomlyGenerateUnderseaCavesMap(filebytes)
         RandomlyGenerateDragonPalaceMap(filebytes)
+        RandomlyGenerateSecondTowerSection(filebytes)
         
     WriteSeedTextToTitleScreen(filebytes, seed)
 
@@ -3684,7 +3685,7 @@ def RandomlyGenerateTowerRoomMap(filebytes, map_start_address, max_size_bytes, r
     rp.room_id = room_id
     for entrance in entrances:
         rp.room_entrance_placements.append(MakeOnePieceDoorEntrancePlacement(entrance[0], entrance[1]))
-    if random.randrange(0, 5) == 0:
+    if random.randrange(0, 4) == 0:
         # Recovery spring
         rp.room_entrance_placements.append(MakeSingleTilePlacement(0x1b))
     room_placements.append(rp)
@@ -3758,7 +3759,7 @@ def RandomlyGenerateOceanMap(filebytes):
     params.backing_tile = 0x1e # jagged
     params.room_open_tile = random.choice([0x06, 0x0c, 0x0f, 0x11])
     params.chunk_tile_choices = [0x00, 0x01, 0x06, 0x0c, 0x0f, 0x11]
-    params.rooms_max_size_bytes = 270
+    params.rooms_max_size_bytes = 265
     params.map_start_address = 0xc148
     params.num_rooms = 17
     params.min_room_size = 4
@@ -3920,6 +3921,9 @@ def RandomlyGenerateOceanMap(filebytes):
     ######################################################################################
     # whirlpool
     whirlpool_placement = MakeSingleTilePlacementWithAddr(0x0e, 0x130)
+    new_chunk = MapChunk()
+    new_chunk.Init(0x00, 0x00, MapChunkType.CHECK, -1, -1, 3, 3) # 3x3 square of ocean
+    whirlpool_placement.chunks.insert(0, new_chunk) # inserted before the whirlpool tile, so below/behind it
     whirlpool_placement.non_walkable_tiles = [[-1, -1], [-1, 0], [-1, 1], [0, -1], [0, 0], [0, 1], [1, -1], [1, 0], [1, 1]]
     whirlpool_placement.exit_offset = [0, 1]
     params.non_walkable_area_placements.append(whirlpool_placement)
@@ -4824,6 +4828,97 @@ def RandomlyGenerateDragonPalaceRoomsMap(filebytes):
         filebytes[dest_addr+1] = chest_pos[1]
 
     return
+    
+def RandomlyGenerateSecondTowerSection(filebytes):
+    # Randomly generate tower rooms
+    room6f = RandomlyGenerateTower6FMap(filebytes)
+    room7f = RandomlyGenerateTower7FMap(filebytes)
+    room8f = RandomlyGenerateTower8FMap(filebytes)
+    room9f = RandomlyGenerateTower9FMap(filebytes)
+    room10f = RandomlyGenerateTower10FMap(filebytes)
+
+    # Randomize connections between tower rooms
+    floor_5_pos = GetExitPosition(filebytes, 0xc2)
+    first_room = [[0x05b, 0x05, floor_5_pos[0], floor_5_pos[1]]]
+    remaining_rooms = [room6f, room7f, room8f, room9f, room10f, \
+            [[0x0c2, 0x34, 0x33, 0x14], [0x0c3, 0x34, 0x33, 0x0d]], \
+            [[0x0c4, 0x35, 0x33, 0x14], [0x0c5, 0x35, 0x33, 0x0d]], \
+            [[0x0c6, 0x36, 0x33, 0x14], [0x0c7, 0x36, 0x33, 0x0d]], \
+            [[0x0c8, 0x37, 0x33, 0x14], [0x0c9, 0x37, 0x33, 0x0d]], \
+            [[0x0ca, 0x38, 0x33, 0x14], [0x0cb, 0x38, 0x33, 0x0d]], \
+            [[0x0eb, 0x4c, 0x15, 0x23]], \
+            [[0x0ec, 0x4d, 0x13, 0x0c]] \
+            ]        
+    RandomizeTowerSection(filebytes, first_room, remaining_rooms)
+
+    return
+    
+def RandomlyGenerateTower6FMap(filebytes):
+    entrances = [[0x0a, 0x0c4, 0x03a], [0x0c, 0x0c3, 0x03b]]
+    clone_exits = [0x0c3, 0x005]
+    return RandomlyGenerateTowerRoomMap(filebytes, 0xdee8, 59, 0x06, entrances, clone_exits)
+
+def RandomlyGenerateTower7FMap(filebytes):
+    entrances = [[0x0e, 0x0eb, 0x060], [0x0a, 0x0c6, 0x05e], [0x0c, 0x0c5, 0x05f]]
+    clone_exits = [0x0c5, 0x006]
+    return RandomlyGenerateTowerRoomMap(filebytes, 0xdf23, 83, 0x07, entrances, clone_exits)
+    
+def RandomlyGenerateTower8FMap(filebytes):
+    entrances = [[0x0c, 0x0c7, 0x04e], [0x0a, 0x0c8, 0x04d]]
+    clone_exits = [0x0c7, 0x007]
+    return RandomlyGenerateTowerRoomMap(filebytes, 0xdf76, 75, 0x08, entrances, clone_exits)
+
+def RandomlyGenerateTower9FMap(filebytes):
+    entrances = [[0x0c, 0x0c9, 0x062], [0x0a, 0x0ca, 0x061], [0x0e, 0x0ec, 0x063]]
+    clone_exits = [0x0c9, 0x008]
+    return RandomlyGenerateTowerRoomMap(filebytes, 0xdfc1, 93, 0x09, entrances, clone_exits)
+    
+def RandomlyGenerateTower10FMap(filebytes):
+    map_start_address = 0xe01e
+    max_size_bytes = 125
+    room_id = 0x0a
+    crystal_door_entrance = [[0x0a, 0x0cc, 0x064]]
+    entrances = [[0x0c, 0x0cb, 0x065]]
+    non_return_data_entrances = [[0x0e, 0x146, 0x066]] # data for this entrance won't be returned from this function
+    clone_exits = [0x0cb, 0x009]
+    params = MakeTowerRoomParams()
+    params.rooms_max_size_bytes = max_size_bytes - 21
+    params.map_start_address = map_start_address
+    params.max_size_bytes = max_size_bytes
+    
+    room_placements = []
+    rp = RoomPlacement()
+    rp.room_id = room_id
+    for entrance in entrances:
+        rp.room_entrance_placements.append(MakeOnePieceDoorEntrancePlacement(entrance[0], entrance[1]))
+    for entrance in non_return_data_entrances:
+        rp.room_entrance_placements.append(MakeOnePieceDoorEntrancePlacement(entrance[0], entrance[1]))
+    if random.randrange(0, 5) == 0:
+        # Recovery spring
+        rp.room_entrance_placements.append(MakeSingleTilePlacement(0x1b))
+    rp.room_entrance_placements.append(MakeCrystalDoorEntrancePlacement(crystal_door_entrance[0][0], 0x15, crystal_door_entrance[0][1], 0xa3ba))
+    
+    # npc (creator)
+    rnp = RoomNPCPlacement()
+    rnp.required_cells = [[0, 0], [0, 1], [1, 0], [1, 1]]
+    rnp.pos_start_addr = 0xa3c1
+    rp.room_npc_placements.append(rnp)
+    
+    room_placements.append(rp)
+
+    params.room_placements = room_placements
+    
+    RandomlyGenerateMultiRoomDungeonMap(params, filebytes)
+    
+    exit_pos = GetExitPosition(filebytes, clone_exits[0])
+    SetExitPosition(filebytes, clone_exits[1], exit_pos[0], exit_pos[1])
+    
+    # Read back exit positions and return exit data in "room" format for exit connection randomization
+    exits = [GetExitPosition(filebytes, entrance[1]) for entrance in entrances]
+    room_format_data = []
+    for i in range(0, len(entrances)):
+        room_format_data.append([entrances[i][2], room_id, exits[i][0], exits[i][1]])
+    return room_format_data
 
 def ApplyIPSPatch(filebytes, patchbytes):
     patch_offset = 0
@@ -4913,7 +5008,7 @@ def FFLRandomize(seed, rompath, monstercsvpath, ffl2rompath, options, options_nu
     # ExportMeatMonstersCSV(filebytes, rompath)
     # ExportItemsCSV(filebytes, rompath)
     
-    # target_rooms = [0x72, 0x73, 0x74, 0x75, 0x76, 0x77, 0x78, 0x79]
+    # target_rooms = [0x7a, 0xc7]
     # for target_room in target_rooms:
         # print("EXITS LEADING TO", hex(target_room))
         # for exit_offset in range(0, 0x1da):
