@@ -6,7 +6,7 @@ import sys
 import enum
 import math
 
-VERSION = "0.013"
+VERSION = "0.014"
 
 # contact: eclipseyy@gmx.com
 
@@ -168,6 +168,8 @@ def RandomizeFFLRomBytes(filebytes, monstercsvpath, ffl2bytes, seed, options, op
         RandomlyGenerateUnderseaCavesMap(filebytes)
         RandomlyGenerateDragonPalaceMap(filebytes)
         RandomlyGenerateSecondTowerSection(filebytes)
+        RandomlyGenerateThirdTowerSection(filebytes)
+        RandomlyGenerateFourthTowerSection(filebytes)
         
     WriteSeedTextToTitleScreen(filebytes, seed)
 
@@ -2169,13 +2171,24 @@ def RandomizeFourthTowerSection(filebytes):
     RandomizeTowerSection(filebytes, first_room, remaining_rooms)
     return
 
-def RandomizeTowerSection(filebytes, first_room, remaining_rooms):
+def RandomizeTowerSection(filebytes, first_room_param, remaining_rooms_param):
     
     # Each room is a list of exits, and each exit is a list with four data members, defined as follows:
     # [0] is exit offset
     # [1] is room ID for return
     # [2] is X coordinate for return
     # [3] is Y coordinate for return
+    
+    # Deep copy data
+    first_room = []
+    for ext in first_room_param:
+        first_room.append(list(ext))
+    remaining_rooms = []
+    for room in remaining_rooms_param:
+        new_room = []
+        for ext in room:
+            new_room.append(list(ext))
+        remaining_rooms.append(new_room)
     
     open_exits = list(first_room)
     exit_pairs = []
@@ -2377,8 +2390,22 @@ def RandomizeRuinsSkyscraper(filebytes):
         [[0x1cc, 0xb6, 0x1c, 0x1a]], \
         [[-1, 0xbd, 0x10, 0x18]] \
         ]
-        
-    RandomizeTowerSection(filebytes, first_room, remaining_rooms)
+
+    # Avoid a problem with room A9.
+    # You enter the doors in this room from the top. If they are connected to one of the rooms
+    # which uses a "warp back" door, namely AD, AE or AF, then upon returning to room A9,
+    # you will be pushed outside the room and left unable to progress.
+    # Avoid this by making sure room A9 isn't directly connected to AD, AE or AF.
+    valid = False
+    while not valid:
+        RandomizeTowerSection(filebytes, first_room, remaining_rooms)
+        valid = True
+        check_addrs = [0x1b2, 0x1b3] # the two exits from room A9
+        for check_addr in check_addrs:
+            target_room = filebytes[0x92d0 + (check_addr * 3)]
+            if target_room in [0xad, 0xae, 0xaf]:
+                valid = False
+                break
         
     return
     
@@ -3183,6 +3210,8 @@ def RandomlyGenerateMultiRoomDungeonMap(params, filebytes):
                     cell = random.choice(valid_cells)
 
                     if room_entrance_placement.write_exit:
+                        if verbose:
+                            print("        place entrance at cell", str(hex(cell[0])), str(hex(cell[1])))
                         one_way_exit = [room_entrance_placement.exit_addr, room.room_id, cell[0] + room_entrance_placement.exit_offset[0], cell[1] + room_entrance_placement.exit_offset[1]]
                         WriteOneWayExits(filebytes, [one_way_exit])
                     for npc_addr in room_entrance_placement.exit_npc_pos_start_addr:
@@ -4919,6 +4948,176 @@ def RandomlyGenerateTower10FMap(filebytes):
     for i in range(0, len(entrances)):
         room_format_data.append([entrances[i][2], room_id, exits[i][0], exits[i][1]])
     return room_format_data
+    
+def RandomlyGenerateThirdTowerSection(filebytes):
+    # Randomly generate tower rooms
+    room11f = RandomlyGenerateTower11FMap(filebytes)
+    room12f = RandomlyGenerateTower12FMap(filebytes)
+    room13f = RandomlyGenerateTower13FMap(filebytes)
+    room14f = RandomlyGenerateTower14FMap(filebytes)
+    room15f = RandomlyGenerateTower15FMap(filebytes)
+    room16f = RandomlyGenerateTower16FMap(filebytes)
+    
+    # Randomize connections between tower rooms
+    floor_10_pos = GetExitPosition(filebytes, 0xcc)
+    first_room = [[0x064, 0x0a, floor_10_pos[0], floor_10_pos[1]]]
+    remaining_rooms = [room11f, room12f, room13f, room14f, room15f, room16f, \
+        [[0x0cc, 0x39, 0x15, 0x14], [0x0cd, 0x39, 0x15, 0x0d]], \
+        [[0x0ce, 0x3a, 0x15, 0x14], [0x0cf, 0x3a, 0x15, 0x0d]], \
+        [[0x0d0, 0x3b, 0x15, 0x14], [0x0d1, 0x3b, 0x15, 0x0d]], \
+        [[0x0d2, 0x3c, 0x15, 0x14], [0x0d3, 0x3c, 0x15, 0x0d]], \
+        [[0x0d4, 0x3d, 0x15, 0x14], [0x0d5, 0x3d, 0x15, 0x0d]], \
+        [[0x0d6, 0x3e, 0x15, 0x14], [0x0d7, 0x3e, 0x15, 0x0d]], \
+        [[0x0ed, 0x4e, 0x20, 0x10]] \
+        ]
+        
+    RandomizeTowerSection(filebytes, first_room, remaining_rooms)
+
+    return
+    
+def RandomlyGenerateTower11FMap(filebytes):
+    entrances = [[0x0a, 0x0ce, 0x067], [0x0c, 0x0cd, 0x068]]
+    clone_exits = [0x0cd, 0x00a]
+    return RandomlyGenerateTowerRoomMap(filebytes, 0xe09b, 95, 0x0b, entrances, clone_exits)
+    
+def RandomlyGenerateTower12FMap(filebytes):
+    entrances = [[0x0c, 0x0cf, 0x06a], [0x0a, 0x0d0, 0x069], [0x0e, 0x0ed, 0x06b]]
+    clone_exits = [0x0cf, 0x00b]
+    return RandomlyGenerateTowerRoomMap(filebytes, 0xe0fa, 106, 0x0c, entrances, clone_exits)
+
+def RandomlyGenerateTower13FMap(filebytes):
+    entrances = [[0x0c, 0x0d1, 0x06d], [0x0a, 0x0d2, 0x06c], [0x0e, 0x0ee, 0x06e]]
+    clone_exits = [0x0d1, 0x00c]
+    exits = RandomlyGenerateTowerRoomMap(filebytes, 0xe164, 100, 0x0d, entrances, clone_exits)
+    # Set position of drowned/flooded world exit
+    SetExitPosition(filebytes, entrances[2][1], exits[2][2], exits[2][3])
+    # Copy position of extra exit for drowned/flooded world
+    exit_pos = GetExitPosition(filebytes, 0x0ee)
+    SetExitPosition(filebytes, 0x0f6, exit_pos[0], exit_pos[1])
+    return exits[:2] # Don't randomize connection to drowned/flooded world
+
+def RandomlyGenerateTower14FMap(filebytes):
+    entrances = [[0x0c, 0x0d3, 0x071], [0x0a, 0x0d4, 0x070], [0x0e, 0x0ef, 0x072]]
+    clone_exits = [0x0d3, 0x00d]
+    exits = RandomlyGenerateTowerRoomMap(filebytes, 0xe1c8, 94, 0x0e, entrances, clone_exits)
+    # Set position of drowned/flooded world exit
+    SetExitPosition(filebytes, entrances[2][1], exits[2][2], exits[2][3])
+    # Copy position of extra exit for drowned/flooded world
+    exit_pos = GetExitPosition(filebytes, 0x0ef)
+    SetExitPosition(filebytes, 0x0f7, exit_pos[0], exit_pos[1])
+    return exits[:2] # Don't randomize connection to drowned/flooded world
+
+def RandomlyGenerateTower15FMap(filebytes):
+    entrances = [[0x0c, 0x0d5, 0x075], [0x0a, 0x0d6, 0x074]]
+    clone_exits = [0x0d5, 0x00e]
+    return RandomlyGenerateTowerRoomMap(filebytes, 0xe226, 92, 0x0f, entrances, clone_exits)
+
+def RandomlyGenerateTower16FMap(filebytes):
+    map_start_address = 0xe282
+    max_size_bytes = 86
+    room_id = 0x10
+    crystal_door_entrance = [[0x0a, 0x0d8, 0x076]]
+    entrances = [[0x0c, 0x0d7, 0x077]]
+    non_return_data_entrances = [[0x0e, 0x08c, 0x078]] # data for this entrance won't be returned from this function
+    clone_exits = [0x0d7, 0x00f]
+    params = MakeTowerRoomParams()
+    params.rooms_max_size_bytes = max_size_bytes - 21
+    params.map_start_address = map_start_address
+    params.max_size_bytes = max_size_bytes
+    
+    room_placements = []
+    rp = RoomPlacement()
+    rp.room_id = room_id
+    for entrance in entrances:
+        rp.room_entrance_placements.append(MakeOnePieceDoorEntrancePlacement(entrance[0], entrance[1]))
+    for entrance in non_return_data_entrances:
+        rp.room_entrance_placements.append(MakeOnePieceDoorEntrancePlacement(entrance[0], entrance[1]))
+    if random.randrange(0, 5) == 0:
+        # Recovery spring
+        rp.room_entrance_placements.append(MakeSingleTilePlacement(0x1b))
+    rp.room_entrance_placements.append(MakeCrystalDoorEntrancePlacement(crystal_door_entrance[0][0], 0x15, crystal_door_entrance[0][1], 0xa3ca))
+    
+    # npc (creator)
+    rnp = RoomNPCPlacement()
+    rnp.required_cells = [[0, 0], [0, 1], [1, 0], [1, 1]]
+    rnp.pos_start_addr = 0xa3d1
+    rp.room_npc_placements.append(rnp)
+    
+    room_placements.append(rp)
+
+    params.room_placements = room_placements
+    
+    RandomlyGenerateMultiRoomDungeonMap(params, filebytes)
+    
+    exit_pos = GetExitPosition(filebytes, clone_exits[0])
+    SetExitPosition(filebytes, clone_exits[1], exit_pos[0], exit_pos[1])
+    # clone exit pos for WoR (Final)
+    exit_pos = GetExitPosition(filebytes, 0x08c)
+    SetExitPosition(filebytes, 0x167, exit_pos[0], exit_pos[1])
+    
+    # Read back exit positions and return exit data in "room" format for exit connection randomization
+    exits = [GetExitPosition(filebytes, entrance[1]) for entrance in entrances]
+    room_format_data = []
+    for i in range(0, len(entrances)):
+        room_format_data.append([entrances[i][2], room_id, exits[i][0], exits[i][1]])
+    return room_format_data
+    
+def RandomlyGenerateFourthTowerSection(filebytes):
+    # Randomly generate tower rooms
+    room17f = RandomlyGenerateTower17FMap(filebytes)
+    room18f = RandomlyGenerateTower18FMap(filebytes)
+    room19f = RandomlyGenerateTower19FMap(filebytes)
+    room20f = RandomlyGenerateTower20FMap(filebytes)
+    room21f = RandomlyGenerateTower21FMap(filebytes)
+    
+    # Randomize connections between tower rooms
+    floor_16_pos = GetExitPosition(filebytes, 0x0d8)
+    first_room = [[0x076, 0x10, floor_16_pos[0], floor_16_pos[1]]]
+    # These rooms include the connection between the flower world on 21f and the hut,
+    # so you might have to go through the hut to continue up the tower!
+    remaining_rooms = [room17f, room18f, room19f, room20f, room21f, \
+        [[0x08a, 0x16, 0x07, 0x08]], \
+        [[0x0d8, 0x3f, 0x33, 0x14], [0x0d9, 0x3f, 0x33, 0x0d]], \
+        [[0x0da, 0x40, 0x33, 0x14], [0x0db, 0x40, 0x33, 0x0d]], \
+        [[0x0dc, 0x41, 0x33, 0x14], [0x0dd, 0x41, 0x33, 0x0d]], \
+        [[0x0de, 0x42, 0x33, 0x14], [0x0df, 0x42, 0x33, 0x0d]], \
+        [[0x0e0, 0x43, 0x33, 0x14], [0x0e1, 0x43, 0x33, 0x0d]], \
+        [[0x0e2, 0x44, 0x33, 0x14], [0x0e3, 0x44, 0x33, 0x0d]], \
+        [[0x0f0, 0x51, 0x0f, 0x0f]], \
+        [[0x0f1, 0x52, 0x0b, 0x0a]], \
+        [[0x0f3, 0x53, 0x07, 0x0d]], \
+        [[0x0f4, 0x54, 0x10, 0x17], [0x0f5, 0x54, 0x21, 0x0c]], \
+        [[0x0f9, 0x57, 0x22, 0x26]] \
+        ]
+        
+    RandomizeTowerSection(filebytes, first_room, remaining_rooms)
+
+    return
+    
+def RandomlyGenerateTower17FMap(filebytes):
+    entrances = [[0x0c, 0x0d9, 0x07c], [0x0a, 0x0da, 0x07b]]
+    clone_exits = [0x0d9, 0x010]
+    return RandomlyGenerateTowerRoomMap(filebytes, 0xe2d8, 150, 0x11, entrances, clone_exits)
+
+def RandomlyGenerateTower18FMap(filebytes):
+    entrances = [[0x0c, 0x0db, 0x07e], [0x0a, 0x0dc, 0x07d], [0x0e, 0x0f0, 0x07f]]
+    clone_exits = [0x0db, 0x011]
+    return RandomlyGenerateTowerRoomMap(filebytes, 0xe36e, 116, 0x12, entrances, clone_exits)
+
+def RandomlyGenerateTower19FMap(filebytes):
+    entrances = [[0x0c, 0x0dd, 0x081], [0x0a, 0x0de, 0x080], [0x0e, 0x0f1, 0x082]]
+    clone_exits = [0x0dd, 0x012]
+    return RandomlyGenerateTowerRoomMap(filebytes, 0xe3e2, 131, 0x13, entrances, clone_exits)
+
+def RandomlyGenerateTower20FMap(filebytes):
+    entrances = [[0x0c, 0x0df, 0x84], [0x0a, 0x0e0, 0x083], [0x0e, 0x0f3, 0x085]]
+    clone_exits = [0x0df, 0x013]
+    return RandomlyGenerateTowerRoomMap(filebytes, 0xe465, 106, 0x14, entrances, clone_exits)
+
+def RandomlyGenerateTower21FMap(filebytes):
+    entrances = [[0x0c, 0x0e1, 0x087], [0x0a, 0x0e2, 0x086], [0x0e, 0x0f5, 0x088]]
+    clone_exits = [0x0e1, 0x014]
+    return RandomlyGenerateTowerRoomMap(filebytes, 0xe4cf, 114, 0x15, entrances, clone_exits)
 
 def ApplyIPSPatch(filebytes, patchbytes):
     patch_offset = 0
@@ -5008,7 +5207,7 @@ def FFLRandomize(seed, rompath, monstercsvpath, ffl2rompath, options, options_nu
     # ExportMeatMonstersCSV(filebytes, rompath)
     # ExportItemsCSV(filebytes, rompath)
     
-    # target_rooms = [0x7a, 0xc7]
+    # target_rooms = [0x11, 0x12, 0x13, 0x14, 0x15, 0x16]
     # for target_room in target_rooms:
         # print("EXITS LEADING TO", hex(target_room))
         # for exit_offset in range(0, 0x1da):

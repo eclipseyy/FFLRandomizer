@@ -85,6 +85,7 @@ Contact: eclipseyy@gmx.com. PLEASE email me with your feedback, suggestions, etc
 
 ## Version history
 
+v0.014 - randomly generate maps for remaining tower rooms. Bug fixes<br/>
 v0.013 - bug fixes<br/>
 v0.012 - randomly generate maps up to World of Ocean - disabled by default, as the process takes a long time<br/>
 v0.011 - bug fix<br/>
