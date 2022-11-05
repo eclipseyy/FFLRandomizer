@@ -13,7 +13,7 @@ Copy the ips patch to the same directory as your FFL ROM. The patch is Tower Rev
 
 You have to supply the path to the FFL rom and the path to the monster CSV. You can edit the monster CSV first if you want. You can optionally supply the seed value to use for the randomization. The randomizer generates one new rom file per run.
 
-Silent mode: randomize_ffl _rompath_ _monstercsvpath_ _seed_ \[options\]<br/>
+Non-interactive mode: randomize_ffl _rompath_ _monstercsvpath_ _seed_ \[options\]<br/>
 Recommended options: randomize_ffl _rompath_ _monstercsvpath_ _seed_ ffl2 _ffl2path_ harder_encounters worldmaps dungeonmaps<br/>
 You can specify multiple options, separated by spaces. Some combinations of options might unbalance the game.<br/>
 For a tougher challenge, the harder_encounters option populates encounters with higher level monsters. Meat transformations and gold combat rewards are adjusted to compensate. harder_encounters is equivalent to transformation_level -1 encounter_level 1 monster_gold -1 gold_table_multiplier 0.7.<br/>
@@ -42,12 +42,12 @@ If you want to cheat and see what's in a randomized rom, use Tower Reversed's fl
 | transformation_level _x_| Sets the monster level offset for meat transformation randomization                               |
 | encounter_level _x_     | Sets the monster level offset for encounter randomization                                         |
 | monster_gold _x_        | Sets the gold table offset for combat rewards                                                     |
-| gold_table_multiplier _x_ | Sets multiplier for values in the gold table                                                      |
+| gold_table_multiplier _x_ | Sets multiplier for values in the gold table                                                    |
 | harder_encounters       | equivalent to transformation_level -1 encounter_level 1 monster_gold -1 gold_table_multiplier 0.7 |
 | nosmallpics             | Disables randomization of small pictures                                                          |
 | ffl2 _ffl2rompath_      | Sets path to FFL2 ROM, currently used only for randomization of small pictures                    |
 | worldmaps               | Enables randomization of world maps (currently Continent and Ocean)                               |
-| dungeonmaps             | Enables randomization of dungeon maps (currently, selected areas up to and including Ocean)       |
+| dungeonmaps             | Enables randomization of certain dungeon and tower maps (more to come)                            |
 
 When mutant race randomization is enabled (which is the default), MUTANT will be renamed to S-MUT, A-MUT or D-MUT depending on which attribute is learned most quickly.<br/>
 When tower randomization is enabled (which is the default), you will likely visit the floors out of numerical order.<br/>
