@@ -14,7 +14,7 @@ Copy the ips patch to the same directory as your FFL ROM. The patch is Tower Rev
 You have to supply the path to the FFL rom and the path to the monster CSV. You can edit the monster CSV first if you want. You can optionally supply the seed value to use for the randomization. The randomizer generates one new rom file per run.
 
 Non-interactive mode: randomize_ffl _rompath_ _monstercsvpath_ _seed_ \[options\]<br/>
-Recommended options: randomize_ffl _rompath_ _monstercsvpath_ _seed_ ffl2 _ffl2path_ harder_encounters worldmaps dungeonmaps<br/>
+Recommended options: randomize_ffl _rompath_ _monstercsvpath_ _seed_ ffl2 _ffl2path_ harder_encounters worldmaps dungeonmaps towermaps<br/>
 You can specify multiple options, separated by spaces. Some combinations of options might unbalance the game.<br/>
 For a tougher challenge, the harder_encounters option populates encounters with higher level monsters. Meat transformations and gold combat rewards are adjusted to compensate. harder_encounters is equivalent to transformation_level -1 encounter_level 1 monster_gold -1 gold_table_multiplier 0.7.<br/>
 Gameplay should hopefully be reasonably balanced between seeds. Let me know if you find a very difficult or very easy seed. The difficulty might not be even within a particular randomized rom, but that's part of the fun; however, please let me know if you come across something ridiculous. Item costs should be fair; if you find items which seem very cheap or expensive, let me know.<br/>
@@ -47,11 +47,12 @@ If you want to cheat and see what's in a randomized rom, use Tower Reversed's fl
 | nosmallpics             | Disables randomization of small pictures                                                          |
 | ffl2 _ffl2rompath_      | Sets path to FFL2 ROM, currently used only for randomization of small pictures                    |
 | worldmaps               | Enables randomization of world maps (currently Continent and Ocean)                               |
-| dungeonmaps             | Enables randomization of certain dungeon and tower maps (more to come)                            |
+| dungeonmaps             | Enables randomization of certain dungeon maps (more to come)                                      |
+| towermaps               | Enables randomization of tower room maps and connections between rooms                            |
 
 When mutant race randomization is enabled (which is the default), MUTANT will be renamed to S-MUT, A-MUT or D-MUT depending on which attribute is learned most quickly.<br/>
 When tower randomization is enabled (which is the default), you will likely visit the floors out of numerical order.<br/>
-I recommend enabling map randomization (worldmaps and dungeonmaps). The switches are disabled by default as the process takes a long time.<br/>
+I recommend enabling map randomization (worldmaps, dungeonmaps and towermaps). The switches are disabled by default as the process takes a long time.<br/>
 
 ## Combat items
 
@@ -85,6 +86,7 @@ Contact: eclipseyy@gmx.com. PLEASE email me with your feedback, suggestions, etc
 
 ## Version history
 
+v0.015 - separate switch for tower maps. Bug fix<br/>
 v0.014 - randomly generate maps for remaining tower rooms. Bug fixes<br/>
 v0.013 - bug fixes<br/>
 v0.012 - randomly generate maps up to World of Ocean - disabled by default, as the process takes a long time<br/>

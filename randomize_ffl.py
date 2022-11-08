@@ -6,7 +6,7 @@ import sys
 import enum
 import math
 
-VERSION = "0.014"
+VERSION = "0.015"
 
 # contact: eclipseyy@gmx.com
 
@@ -31,6 +31,7 @@ SKYSCRAPER = 16
 SMALL_PICS = 17
 WORLD_MAPS = 18
 DUNGEON_MAPS = 19
+TOWER_MAPS = 20
 
 # option definitions (numbers)
 TRANSFORMATION_LEVEL_ADJUST = 101
@@ -162,11 +163,13 @@ def RandomizeFFLRomBytes(filebytes, monstercsvpath, ffl2bytes, seed, options, op
     if options[DUNGEON_MAPS]:
         RandomlyGenerateBanditCaveMap(filebytes)
         RandomlyGenerateCastleSwordMap(filebytes)
-        RandomlyGenerateFirstTowerSection(filebytes)
         RandomlyGenerateOceanCaves1Map(filebytes)
         RandomlyGenerateOceanCaves2Map(filebytes)
         RandomlyGenerateUnderseaCavesMap(filebytes)
         RandomlyGenerateDragonPalaceMap(filebytes)
+
+    if options[TOWER_MAPS]:
+        RandomlyGenerateFirstTowerSection(filebytes)
         RandomlyGenerateSecondTowerSection(filebytes)
         RandomlyGenerateThirdTowerSection(filebytes)
         RandomlyGenerateFourthTowerSection(filebytes)
@@ -2393,9 +2396,9 @@ def RandomizeRuinsSkyscraper(filebytes):
 
     # Avoid a problem with room A9.
     # You enter the doors in this room from the top. If they are connected to one of the rooms
-    # which uses a "warp back" door, namely AD, AE or AF, then upon returning to room A9,
+    # which uses a "warp back" door, namely 48, 9b, AD, AE, AF, or BD, then upon returning to room A9,
     # you will be pushed outside the room and left unable to progress.
-    # Avoid this by making sure room A9 isn't directly connected to AD, AE or AF.
+    # Avoid this by making sure room A9 isn't directly connected to a room with a "warp back" door.
     valid = False
     while not valid:
         RandomizeTowerSection(filebytes, first_room, remaining_rooms)
@@ -2403,7 +2406,7 @@ def RandomizeRuinsSkyscraper(filebytes):
         check_addrs = [0x1b2, 0x1b3] # the two exits from room A9
         for check_addr in check_addrs:
             target_room = filebytes[0x92d0 + (check_addr * 3)]
-            if target_room in [0xad, 0xae, 0xaf]:
+            if target_room in [0x48, 0x9b, 0xad, 0xae, 0xaf, 0xbd]:
                 valid = False
                 break
         
@@ -5244,7 +5247,7 @@ def PromptForOptions(options, options_numbers):
         MEAT:"Randomize meat transformations?", PATCH:"Apply patch before randomization?", \
         TOWER:"Randomize tower exits?", DUNGEONS:"Randomize dungeon exits?", SKYSCRAPER:"Randomize skyscraper exits?", \
         SMALL_PICS:"Randomize small pics?", WORLD_MAPS:"Randomize world maps?", \
-        DUNGEON_MAPS:"Randomize dungeon maps?" }
+        DUNGEON_MAPS:"Randomize dungeon maps?", TOWER_MAPS:"Randomize tower maps?" }
         
     number_prompt_strings = { TRANSFORMATION_LEVEL_ADJUST:"Edit meat transformation level adjust? Type number to edit:", \
         ENCOUNTER_LEVEL_ADJUST:"Edit encounter level adjust? Type number to edit:", \
@@ -5288,7 +5291,7 @@ seed = 0
 default_options = { MUTANT_ABILITIES:True, ARMOR:True, COMBAT_ITEMS:True, CHARACTER_ITEMS:True, ENEMY_ITEMS:True, \
     SHOPS:True, CHESTS:True, MONSTERS:True, ENCOUNTERS:True, GUILD_MONSTERS:True, HP_TABLE:True,
     MUTANT_RACE:True, MEAT:True, PATCH:True, TOWER:True, DUNGEONS:True, SKYSCRAPER:True, SMALL_PICS:True,
-    WORLD_MAPS:False, DUNGEON_MAPS:False }
+    WORLD_MAPS:False, DUNGEON_MAPS:False, TOWER_MAPS:False }
     
 options_numbers = { TRANSFORMATION_LEVEL_ADJUST:0, ENCOUNTER_LEVEL_ADJUST:0, MONSTER_GOLD_OFFSET_ADJUST:0, \
     GOLD_TABLE_AMOUNT_MULTIPLIER:1.0}
@@ -5298,7 +5301,7 @@ command_line_switches = { MUTANT_ABILITIES:"nomutantabilities", ARMOR:"noarmor",
     SHOPS:"noshops", CHESTS:"nochests", MONSTERS:"nomonsters", ENCOUNTERS:"noencounters", \
     GUILD_MONSTERS:"noguildmonsters", HP_TABLE:"nohptable", MUTANT_RACE:"nomutantrace", \
     MEAT:"nomeat", PATCH:"nopatch", TOWER:"notower", DUNGEONS:"nodungeons", SKYSCRAPER:"noskyscraper", \
-    SMALL_PICS:"nosmallpics", WORLD_MAPS:"worldmaps", DUNGEON_MAPS:"dungeonmaps" }
+    SMALL_PICS:"nosmallpics", WORLD_MAPS:"worldmaps", DUNGEON_MAPS:"dungeonmaps", TOWER_MAPS:"towermaps" }
     
 command_line_switches_numbers = { TRANSFORMATION_LEVEL_ADJUST:"transformation_level", \
     ENCOUNTER_LEVEL_ADJUST:"encounter_level", MONSTER_GOLD_OFFSET_ADJUST:"monster_gold", \
