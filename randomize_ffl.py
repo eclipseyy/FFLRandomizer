@@ -6,7 +6,7 @@ import sys
 import enum
 import math
 
-VERSION = "0.015"
+VERSION = "0.016"
 
 # contact: eclipseyy@gmx.com
 
@@ -5348,11 +5348,11 @@ else:
 
     # Interactive mode
 
-    rompath = input("Enter path to rom:")
+    rompath = input("Enter rom filename including full path:")
     rompath = rompath.strip("\"")
-    monstercsvpath = input("Enter path to monster CSV:")
+    monstercsvpath = input("Enter monster CSV filename including full path:")
     monstercsvpath = monstercsvpath.strip("\"")
-    ffl2rompath = input("Enter path to FFL2 rom (optional):")
+    ffl2rompath = input("Enter FFL2 rom filename including full path (optional):")
     ffl2rompath = ffl2rompath.strip("\"")
     seed_str = input("Enter seed, or leave blank for random:")
     seed = 0

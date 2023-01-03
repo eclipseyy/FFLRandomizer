@@ -3,7 +3,7 @@ Randomizer for Gameboy game The Final Fantasy Legend (1989).
 
 Familiarity with the vanilla game is highly recommended.
 
-Windows binary here: https://github.com/eclipseyy/FFLRandomizer/raw/main/randomize_ffl.zip
+Windows binary here: https://github.com/eclipseyy/FFLRandomizer/raw/main/randomize_ffl.zip Tested on Windows 10. On Windows 7, this binary doesn't seem to work. Instead you should install Python 3.8 (or above? not tested), clone this repo or download as zip, and run python.exe randomize_ffl.py.
 
 Written in Python 3.8 on Windows. I haven't tested other platforms. There isn't anything Windows-specific in there - pathlib is used for paths, etc - so it might work. Could have endianness issues. The Windows binary was created using pyinstaller.<br/>
 
