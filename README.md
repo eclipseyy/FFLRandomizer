@@ -86,6 +86,7 @@ Contact: eclipseyy@gmx.com. PLEASE email me with your feedback, suggestions, etc
 
 ## Version history
 
+v0.016 - edited interactive prompt text a bit<br/>
 v0.015 - separate switch for tower maps. Bug fix<br/>
 v0.014 - randomly generate maps for remaining tower rooms. Bug fixes<br/>
 v0.013 - bug fixes<br/>
